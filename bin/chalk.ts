@@ -22,6 +22,7 @@ import path from "node:path";
 import { ChalkStore, type Store, DEFAULT_NEDB_URL, DEFAULT_DB, ensureNedbd } from "../src/store/nedb.ts";
 import { EmbeddedStore } from "../src/store/embedded.ts";
 import { WorkerStore } from "../src/store/worker_store.ts";
+import { renderBanner, shortSignature } from "../src/server/banner.ts";
 import { NFLDataSource } from "../src/source/nfldata.ts";
 import { resolveWatchDeep } from "../src/ingest/watch_config.ts";
 import { ingest } from "../src/ingest/ingest.ts";
@@ -138,6 +139,7 @@ function startWatchLoop(store: Store, season: number, intervalS: number, deep: b
 }
 
 async function main() {
+  if (cmd === "--version" || cmd === "-v" || cmd === "version") { process.stdout.write(shortSignature() + "\n"); return; }
   switch (cmd) {
     case "ingest": {
       const { store, stop } = await boot();
@@ -337,6 +339,24 @@ async function main() {
       return;
     }
     case "serve": {
+      {
+        const storeMode = (process.env.CHALK_STORE ?? (process.env.NEDB_URL ? "http" : "embedded")) as "embedded" | "http";
+        const watchSeasonEnv = num("watch-season", process.env.CHALK_WATCH_SEASON ? Number(process.env.CHALK_WATCH_SEASON) : undefined);
+        process.stdout.write(renderBanner({
+          command: "serve",
+          version: "",
+          mode: storeMode === "http" ? "http nedbd" : process.env.CHALK_EMBEDDED_WORKER === "0" ? "embedded (in-thread)" : "embedded (worker thread)",
+          dataDir: storeMode === "http" ? null : path.resolve(process.env.CHALK_DATA ?? "./chalk-data"),
+          nedbUrl: storeMode === "http" ? (process.env.NEDB_URL ?? DEFAULT_NEDB_URL) : null,
+          host: str("host", process.env.HOST ?? "127.0.0.1")!,
+          port: num("port", Number(process.env.PORT ?? 4040))!,
+          llm: process.env.CHALK_LLM_MODEL || process.env.CHALK_LLM_KEY ? { provider: process.env.CHALK_LLM_PROVIDER ?? "pin", model: process.env.CHALK_LLM_MODEL ?? "GLM-4-32B", hasKey: Boolean(process.env.CHALK_LLM_KEY || process.env.AIASSIST_API_KEY) } : null,
+          defaults: { team: process.env.CHALK_DEFAULT_TEAM ?? "TB", season: process.env.CHALK_DEFAULT_SEASON ? Number(process.env.CHALK_DEFAULT_SEASON) : null },
+          watch: watchSeasonEnv ? { season: watchSeasonEnv, intervalS: num("watch-interval", Number(process.env.CHALK_WATCH_INTERVAL ?? 1800))!, deep: resolveWatchDeep(flags.deep, process.env.CHALK_WATCH_DEEP) } : null,
+          admin: Boolean(process.env.CHALK_ADMIN_TOKEN),
+          telemetry: process.env.CHALK_TELEMETRY !== "0",
+        }) + "\n");
+      }
       const { store, stop, mode } = await boot({ worker: true });
       const server = await startServer({
         store,
