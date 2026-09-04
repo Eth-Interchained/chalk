@@ -40,11 +40,11 @@ Requires Node ≥ 24 (TypeScript runs natively — no build step).
 
 ```bash
 npm install
-npx chalk ingest --season 2025          # ~3 min: 285 games, 48,771 plays → NEDB (autostarts nedbd-v2)
-npx chalk ingest --season 2025 --context-only   # ~6 min: formation/personnel/motion/pressure context for every play
-npx chalk ingest --season 2026          # schedule (so "this week's opponent" resolves); plays land as games are played
-npx chalk rate --team TB --season 2025  # Third Down Rating with formula, population, sample
-npx chalk serve --port 4040             # open http://127.0.0.1:4040
+node bin/chalk.ts ingest --season 2025          # ~3 min: 285 games, 48,771 plays → embedded NEDB at ./chalk-data
+node bin/chalk.ts ingest --season 2025 --context-only   # ~6 min: formation/personnel/motion/pressure context for every play
+node bin/chalk.ts ingest --season 2026          # schedule (so "this week's opponent" resolves); plays land as games are played
+node bin/chalk.ts rate --team TB --season 2025  # Third Down Rating with formula, population, sample
+node bin/chalk.ts serve --port 4040             # open http://127.0.0.1:4040
 ```
 
 ### Store
@@ -72,8 +72,8 @@ Without a key, CHALK still answers every question with the deterministic stateme
 ### Near-live (Pulse v1)
 
 ```bash
-npx chalk pulse                     # one tick: schedule + recent scores from TheSportsDB (free test key)
-THESPORTSDB_KEY=… npx chalk pulse --watch --interval 120   # Premium key unlocks livescore (~2-min freshness)
+node bin/chalk.ts pulse                     # one tick: schedule + recent scores from TheSportsDB (free test key)
+THESPORTSDB_KEY=… node bin/chalk.ts pulse --watch --interval 120   # Premium key unlocks livescore (~2-min freshness)
 ```
 
 Every tick lands as immutable observations in `football_raw_pulse` with derived `football_game_state` rows; changed scores create new versions `caused_by` the previous one. "Near-live", never "realtime".
