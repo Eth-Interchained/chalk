@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.4 · the default OG image
+
+- **Mark:** "a brilliant OG image branded with our iconic logo please with inviting phrases about our educational gamified intelligence app."
+- `web/og/default.jpg` (1200×630): a generated night-field backdrop (chalk lines, no text — generated text is unreliable), darkened left-heavy, then composited deterministically with the real mark (`icon-512.png`), the SPORTS**RATER** wordmark in Barlow Condensed Black, headline **KNOW THE GAME. / PLAY THE NUMBERS.** (lime), two invitations — "Learn football the way analysts do — every rating built from real plays, every number traceable." / "Pick the game. Call the week. The final score grades you." — and the doctrine footer with © Interchained LLC. Fonts fetched from google/fonts at build time; the image is committed, so nothing is fetched at runtime.
+- `index.html` now ships default OG/Twitter tags inside the `<!-- sharecard:og -->` markers, so `/s/TEAM` (v0.12.0) replaces them with the team hero instead of stacking a second set. Bare `sports-rater.com` links preview the brand card; team links preview the team.
+- Tests: default tags present, image real, injection yields exactly one `og:title` and swaps to the hero. 104/104 both stores.
+
 ## 2026-09-04 — v0.12.3 · Last game + What's hurting them share a column
 
 - **Mark:** "lets move 'What's hurting them' card underneath 'Last game' card so they share height because they're both short and the 'Next up' requires more horizontal space" (screenshot: Next up's pick buttons clipped at the tile edge).
