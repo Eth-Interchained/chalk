@@ -4,6 +4,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.7.6 · the Feed is a first-class view; holo shimmer; pro scrollbars
+
+### SHIPPED
+- **Mark:** "I don't see completions after a basic refresh … where's the Feed of live completions?" They were there — hydrated, 5 cards — 2,300 px below the fold under the whole dashboard grid (measured in a real browser). Dashboard stays as is; the Feed is now its own view.
+- `Dashboard | Feed` tabs under the header (sticky, count badge = answers on record). Feed view = every completion for the team/season newest-first (hydrated, paginated, infinite scroll), suggestions row, and a 30 s poll (`pollFeed`) that prepends answers from other fans with a flash; ↻ refresh pulls now. `ask()` switches to the Feed so the streaming card is on screen; Record-strip taps open in the Feed. `view=` URL param round-trips.
+- Holo shimmer: skeletons and loading overlays use a multi-hue gradient (accent / blue / accent / pink) at 1.6 s instead of flat gray.
+- Pro scrollbars for coach tables, the Record strip and code blocks: thin, accent-gradient thumb, transparent track, right-edge fade on tables so horizontal overflow is legible.
+
+### VERIFIED ON THE REAL SYSTEM
+- Static tests (tabs, setView, ask→feed, CSS view gating, holo keyframes); 72/72. Browser check after Mark deploys: Feed tab shows the stored answers immediately; asking lands the card at the top of the Feed.
+
+---
+
 ## 2026-09-04 — v0.7.5 · Coach mode blanked the page (body matched `.coach { display:none }`); dead mode button; client guards
 
 ### SHIPPED

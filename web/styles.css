@@ -288,3 +288,41 @@ form.rd .go { justify-self: start; }
 .card.skel { animation: none; }
 .card.recorded { border-color: color-mix(in srgb, var(--line) 70%, var(--accent) 30%); }
 .card.flash { box-shadow: 0 0 0 2px var(--accent); transition: box-shadow .2s; }
+
+/* ---------------- views: Dashboard | Feed ---------------- */
+.views { display: flex; gap: 6px; padding: 6px 4px 10px; position: sticky; top: 58px; z-index: 4; background: linear-gradient(180deg, var(--bg) 70%, transparent); }
+.view-tab { font-family: var(--display); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 13px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg-2); background: var(--bg-2); display: inline-flex; gap: 8px; align-items: center; transition: background .15s, color .15s, border-color .15s; }
+.view-tab:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.view-tab.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.view-count { font-family: var(--mono); font-size: 11px; letter-spacing: 0; text-transform: none; padding: 1px 7px; border-radius: 999px; background: rgba(0,0,0,.18); }
+.view-tab:not(.on) .view-count { background: var(--bg-3); color: var(--fg-3); }
+.view-count:empty { display: none; }
+main.view-home #feedview { display: none; }
+main.view-feed #home { display: none; }
+.feedview .feed-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 4px 0; }
+.feedview .feed { padding-top: 6px; }
+
+/* ---------------- holo shimmer (replaces the flat gray) ---------------- */
+@keyframes holo { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+.skeleton, .home.loading .tile::after, .home.loading .rt::after {
+  background: linear-gradient(100deg,
+    color-mix(in srgb, var(--accent) 10%, var(--bg-3)) 0%,
+    color-mix(in srgb, var(--blue) 22%, var(--bg-3)) 25%,
+    color-mix(in srgb, var(--accent) 28%, var(--bg-3)) 45%,
+    color-mix(in srgb, #ff7ad9 18%, var(--bg-3)) 65%,
+    color-mix(in srgb, var(--accent) 10%, var(--bg-3)) 100%);
+  background-size: 200% 100%;
+  animation: holo 1.6s linear infinite;
+}
+.home.loading .tile::after, .home.loading .rt::after { opacity: .35; mix-blend-mode: screen; }
+.card.skel .skeleton { box-shadow: inset 0 0 0 1px rgba(255,255,255,.03); }
+
+/* ---------------- pro scrollbars (coach tables, record strip, code, suggest) ---------------- */
+.tbl, .record-strip, pre.code { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--accent) 55%, var(--bg-3)) transparent; }
+.tbl::-webkit-scrollbar, .record-strip::-webkit-scrollbar, pre.code::-webkit-scrollbar { height: 8px; }
+.tbl::-webkit-scrollbar-track, .record-strip::-webkit-scrollbar-track, pre.code::-webkit-scrollbar-track { background: transparent; }
+.tbl::-webkit-scrollbar-thumb, .record-strip::-webkit-scrollbar-thumb, pre.code::-webkit-scrollbar-thumb { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 70%, transparent), color-mix(in srgb, var(--accent) 35%, transparent)); border-radius: 999px; border: 2px solid var(--bg-2); }
+.tbl::-webkit-scrollbar-thumb:hover, .record-strip::-webkit-scrollbar-thumb:hover, pre.code::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+.tbl { position: relative; }
+.tbl::after { content: ""; position: absolute; top: 0; right: 0; bottom: 8px; width: 28px; background: linear-gradient(90deg, transparent, var(--bg-2)); pointer-events: none; border-radius: 0 12px 12px 0; }
+.tbl table { min-width: 100%; white-space: nowrap; }
