@@ -19,7 +19,7 @@ question
 
 No computer vision. No hosted database. No model doing arithmetic.
 
-## What runs today (v0.4.0)
+## What runs today (v0.5.0)
 
 | Layer | What it does |
 | --- | --- |
@@ -101,6 +101,7 @@ Full document: `GET /api/v1/openapi.json`. Highlights:
 | `GET /api/v1/teams/TB/home?season=2025` | Home composite: rating card (6 subjects), trend, badges, form, last game + deviation, next game + scout card, weak spots |
 | `GET /api/v1/ratings/offense?team=TB&season=2025` | Any subject: `offense`, `defense`, `red-zone`, `explosiveness`, `ball-security` — snapshot + formula + team profile |
 | `GET /api/v1/rankings?season=2025[&definition=]` | Power rankings with movement, risers and fallers |
+| `GET /api/v1/ratings/offense/trend?team=TB&season=2025` | Any subject's rating week over week, as known then |
 | `POST /api/v1/fans/ratings` · `/fans/reactions` · `/fans/posts` | Fan writes (body carries `fan_id` + `handle`; no account) |
 | `GET /api/v1/feed?team=TB` | Newest-first feed of takes and ratings — the hash chain, rendered |
 | `GET /api/v1/fans/consensus?team=TB&season=2025` | Fans' mean/median per subject vs CHALK |
@@ -146,7 +147,7 @@ Every snapshot records population, weights, raw and normalized values, points pe
 
 ```bash
 npm run typecheck
-npm test              # node --test — 54 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
+npm test              # node --test — 55 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
 ```
 
 The frozen fixture is the real game `2025_18_CAR_TB` (159 plays as returned by NFLData on 2026-09-03). Ground truth asserted exactly: TB 8-of-15 on third down, 2-of-7 on third-and-long, CAR 1-of-8. The model is never required for analytics tests.
@@ -154,6 +155,10 @@ The frozen fixture is the real game `2025_18_CAR_TB` (159 plays as returned by N
 ## Sports-Rater identity
 
 There are no accounts. The browser makes a random salt once, keeps it in `localStorage`, and computes `fan_id = sha256("nickname:salt")`. The handle everyone sees is `nickname#` + the first six hex characters. Every rating, reaction and take carries `fan_id` + `handle` and nothing else about the person; the server never sees the salt and has no fan table. Each fan's writes form a chain (`prev` = hash of their previous write), and every write is `caused_by` the CHALK record it reacts to — so `TRACE` from a fan's take reaches the plays behind the number they were arguing about. Lose the device, lose the handle; that's the deal.
+
+## Deploy
+
+See `DEPLOY.md` — nginx block, systemd units for nedbd / CHALK / the watch loop, env template, and the exact commands for sports-rater.com on the VPS.
 
 ## Data & licensing
 

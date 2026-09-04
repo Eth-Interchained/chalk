@@ -1,0 +1,23 @@
+# /etc/systemd/system/chalk.service — the CHALK API + Sports-Rater client.
+[Unit]
+Description=CHALK football intelligence (sports-rater.com)
+After=network.target nedbd-chalk.service
+Requires=nedbd-chalk.service
+
+[Service]
+Type=simple
+User=chalk
+Group=chalk
+WorkingDirectory=/opt/chalk
+EnvironmentFile=/opt/chalk/.env
+Environment=NEDB_URL=http://127.0.0.1:7070
+Environment=CHALK_AUTOSTART_NEDB=0
+ExecStart=/usr/bin/node /opt/chalk/bin/chalk.ts serve --host 127.0.0.1 --port 4040
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

@@ -19,7 +19,8 @@ import { llmConfigFromEnv, type LlmConfig } from "../llm/client.ts";
 import { planQuestion, type PlanContext, type QueryPlan } from "../llm/planner.ts";
 import type { Game, Play } from "../model/football.ts";
 import { BUILTIN_DEFINITIONS, CARD_SUBJECTS, OFFENSE_DEFAULT_V1, THIRD_DOWN_DEFAULT_V1, validateDefinition } from "../rating/definitions.ts";
-import { invalidateProfileCache, rankings, rateSubject } from "../rating/rank.ts";
+import { invalidateProfileCache, leagueProfilesFor, rankings, rateSubject } from "../rating/rank.ts";
+import { subjectTrend } from "../rating/trend.ts";
 import { invalidateLeagueCache } from "../rating/league.ts";
 import { compareDefinitions, leagueThirdDown, listDefinitions, loadDefinition, rateThirdDown } from "../rating/league.ts";
 import { computeRating, persistDefinition } from "../rating/rating.ts";
@@ -132,7 +133,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
     if (p === "/api/v1/health" && m === "GET") {
       const [health, seq, head] = await Promise.all([store.health().catch((e) => ({ ok: false, error: (e as Error).message })), store.seq().catch(() => null), store.head().catch(() => null)]);
-      return json(res, 200, { chalk: "ok", version: "0.4.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
+      return json(res, 200, { chalk: "ok", version: "0.5.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
     }
     if (p === "/api/v1/openapi.json") return json(res, 200, openapiDocument(`${url.protocol}//${url.host}`));
     if (p === "/api/v1/meta") {
@@ -275,6 +276,17 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const r = await compareDefinitions(store, team, season, a, b, (q.get("side") as "offense" | "defense") ?? "offense");
       if (!r) throw new HttpError(404, `no third-down data for ${team} ${season}`);
       return json(res, 200, { disagreement: r.disagreement, a: { summary: summarizeRating(r.a), snapshot: r.a.snapshot }, b: { summary: summarizeRating(r.b), snapshot: r.b.snapshot } });
+    }
+    if ((mm = p.match(/^\/api\/v1\/ratings\/(offense|defense|red-zone|red_zone|explosiveness|ball-security|ball_security|third-down|third_down)\/trend$/)) && m === "GET") {
+      const subject = mm[1].replace("-", "_");
+      const team = need(q, "team").toUpperCase();
+      const season = Number(q.get("season") ?? defaultSeason);
+      const def = (await loadDefinition(store, q.get("definition") ?? CARD_SUBJECTS.find((c) => c.subject === subject)!.definition.id));
+      if (!def) throw new HttpError(404, "unknown rating definition");
+      const side = def.subject === "defense" ? "defense" : "offense";
+      const lp = await leagueProfilesFor(store, season, side, log);
+      const games = (await store.query<Game>(`FROM ${COLL.games} WHERE season = ${season}`)).map((g) => g.data);
+      return json(res, 200, subjectTrend(lp.rows, games, team, season, def, { seq: lp.seq, head: lp.head }));
     }
     if (p === "/api/v1/rankings" && m === "GET") {
       const season = Number(q.get("season") ?? defaultSeason);

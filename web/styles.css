@@ -104,6 +104,18 @@ main { position: relative; z-index: 1; max-width: 820px; margin: 0 auto; padding
 .who-form { display: grid; gap: 8px; }
 .who-form input { background: var(--bg-3); border: 1px solid var(--line); color: var(--fg); border-radius: 10px; padding: 10px 12px; font: inherit; }
 
+/* ---------------- games ---------------- */
+.tile.games { grid-column: 1 / -1; }
+.games-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.gm { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: center; padding: 8px 10px; background: var(--bg-3); border-radius: 10px; cursor: pointer; border: 1px solid transparent; }
+.gm:hover { border-color: var(--accent-2); }
+.gm .wl { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; font-family: var(--display); font-weight: 800; background: var(--accent); color: var(--accent-ink); }
+.gm .wl.L { background: var(--red); color: #fff; }
+.gm .wl.S { background: var(--bg-2); color: var(--fg-3); border: 1px solid var(--line); }
+.gm .o { font-family: var(--display); font-weight: 700; font-size: 16px; }
+.gm .m { font-size: 11px; color: var(--fg-3); font-family: var(--mono); }
+#trend-chips .chip { padding: 4px 9px; font-size: 12px; }
+
 /* ---------------- grid tiles ---------------- */
 .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .tile { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; min-height: 120px; position: relative; overflow: hidden; }

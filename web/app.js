@@ -83,6 +83,8 @@ async function loadHome(defId) {
     renderBadges(h.badges);
     renderRatings(h.ratings);
     renderScout(h.scout, h.next_game);
+    renderTrendChips(h.ratings);
+    loadGames();
   } catch (e) {
     $("#rc-score").textContent = "–";
     $("#rc-line1").innerHTML = `<span class="err">${esc(e.message)}</span>`;
@@ -115,6 +117,41 @@ function renderTrend(t) {
     <text class="val" x="${(xs[xs.length - 1] + 5).toFixed(1)}" y="${(ys[ys.length - 1] + 4).toFixed(1)}">${last.score}</text>`;
   sub.textContent = `wk ${pts[0].week}–${last.week} · as known then`;
   head.textContent = t.headline;
+}
+function renderTrendChips(ratings) {
+  const box = $("#trend-chips"); box.innerHTML = "";
+  for (const r of ratings) {
+    const b = el(`<button class="chip ${r.subject === "third_down" ? "on" : ""}">${esc(r.label)}</button>`);
+    b.onclick = async () => {
+      box.querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); b.classList.add("on");
+      $("#trend-headline").textContent = "…";
+      try {
+        if (r.subject === "third_down") { renderTrend(state.home.trend); return; }
+        const t = await api(`/api/v1/ratings/${r.subject.replace("_", "-")}/trend?team=${state.team}&season=${state.season}`);
+        renderTrend({ points: t.points.map((p) => ({ ...p, attempts: p.sample })), headline: t.headline });
+      } catch (e) { $("#trend-headline").textContent = e.message; }
+    };
+    box.append(b);
+  }
+}
+async function loadGames() {
+  const body = $("#games-body"); const sub = $("#games-sub");
+  try {
+    const g = await api(`/api/v1/games?season=${state.season}&team=${state.team}`);
+    const played = g.games.filter((x) => x.home_score !== null);
+    const w = played.filter((x) => x.winner === state.team).length, l = played.filter((x) => x.winner && x.winner !== state.team).length, t = played.length - w - l;
+    sub.textContent = played.length ? `${w}-${l}${t ? `-${t}` : ""}` : "";
+    body.innerHTML = "";
+    for (const x of g.games) {
+      const home = x.home_team === state.team; const opp = home ? x.away_team : x.home_team;
+      const us = home ? x.home_score : x.away_score, them = home ? x.away_score : x.home_score;
+      const wl = x.home_score === null ? "S" : x.winner === state.team ? "W" : x.winner === null ? "T" : "L";
+      const row = el(`<div class="gm" title="${esc(x.id)}"><div class="wl ${wl}">${wl === "S" ? "·" : wl}</div><div><div class="o">${home ? "vs" : "@"} ${esc(opp)}${x.home_score !== null ? ` <span class="muted">${us}–${them}</span>` : ""}</div><div class="m">Wk ${x.week}${x.gameday ? ` · ${esc(x.gameday.slice(5))}` : ""}${x.div_game ? " · div" : ""}</div></div></div>`);
+      row.onclick = () => ask(x.home_score === null ? `What should I know about the ${opp} offense?` : `Why did ${teamName(state.team)} ${wl === "W" ? "win" : wl === "L" ? "lose" : "tie"} ${x.id}`);
+      body.append(row);
+    }
+    if (!g.games.length) body.innerHTML = `<div class="empty">No games ingested for ${state.season}.</div>`;
+  } catch (e) { body.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 function renderForm(f) {
   const b = $("#form-body");

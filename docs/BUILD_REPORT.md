@@ -4,6 +4,21 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.5.0 · deploy kit, trends for every subject, Games tile
+
+### SHIPPED
+- **Deploy kit** (`deploy/`, `DEPLOY.md`): nginx server block for sports-rater.com (Cloudflare real-IP, SSE-safe `/api/v1/ask` location, 64 KB body cap), systemd units `nedbd-chalk` (loopback, optional NEDB_TMK + token), `chalk` (API + client on 127.0.0.1:4040), `chalk-watch` (re-ingest + pulse every 30 min), `env.example`, copy-paste runbook with expected outputs and an operations table. Nothing touches other sites on the box.
+- **Per-subject trends** (`rating/trend.ts`, `GET /ratings/{subject}/trend`): as-known-then weekly score/rank for Offense, Defense, Red Zone, Explosiveness, Ball Security (third-down keeps its richer engine). Home trend tile gets subject chips.
+- **Games tile**: every TB game with W/L/scheduled, score, week, divisional flag; tap a played game → "Why did Tampa win/lose <game>?", tap a scheduled one → scout the opponent.
+- Tests: **55**.
+
+### NEXT
+- Game day (Sept 10): `chalk-watch` on `CHALK_WATCH_SEASON=2026`; live card via pulse `phase=live`; deviation once NFLData lands the plays.
+- Fan consensus trend; moderation hide-by-hash; hashcash stamps if needed.
+- Deploy: needs Mark on the VPS — DEPLOY.md is the whole procedure.
+
+---
+
 ## 2026-09-04 — v0.4.0 · Sports-Rater fan layer
 
 ### SHIPPED
