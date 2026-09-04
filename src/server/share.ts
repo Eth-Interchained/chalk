@@ -90,8 +90,13 @@ export function injectOg(html: string, c: ShareCopy): string {
 /** Public base URL for links in captions and OG tags: CHALK_PUBLIC_URL, else the request's forwarded host, else the fallback. */
 export function publicBase(env: NodeJS.ProcessEnv, headers: Record<string, string | string[] | undefined>, fallback = "https://sports-rater.com"): string {
   if (env.CHALK_PUBLIC_URL) return env.CHALK_PUBLIC_URL.replace(/\/$/, "");
-  const host = (headers["x-forwarded-host"] ?? headers.host) as string | undefined;
+  const raw = (headers["x-forwarded-host"] ?? headers.host) as string | undefined;
+  const host = raw?.split(",")[0].trim();
   if (!host) return fallback;
+  // A reverse proxy that forwards its upstream Host (127.0.0.1:4040, localhost, a LAN address) is not telling us
+  // the public name — never put that in a caption or an OG tag. Fall back; CHALK_PUBLIC_URL pins it for good.
+  const bare = host.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+  if (/^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|::1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/i.test(bare)) return fallback;
   const proto = ((headers["x-forwarded-proto"] as string | undefined) ?? "https").split(",")[0].trim();
-  return `${proto}://${host.split(",")[0].trim()}`;
+  return `${proto}://${host}`;
 }

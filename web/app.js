@@ -319,6 +319,11 @@ let homeRefreshAttempts = 0;
 // called this without `quiet`, so a page that HAD data blanked and re-announced "computing" every 4 s
 // for the whole ~30 s of a one-time post-deploy rebuild.
 async function loadHome(defId, opts = {}) {
+  const p = loadHomeInner(defId, opts);
+  state.homeLoading = p; // anything that needs the payload (the sharecard) awaits this instead of drawing from nothing
+  try { return await p; } finally { if (state.homeLoading === p) state.homeLoading = null; }
+}
+async function loadHomeInner(defId, opts = {}) {
   const quiet = Boolean(opts.quiet);
   let slow = null;
   if (!quiet) {
@@ -722,6 +727,15 @@ async function openShareCard() {
   showCard(card);
   const canvas = $("canvas", card), out = $(".out", card), cap = $(".cap", card), soc = $(".soc", card);
   const say = (m, err) => { out.textContent = m; out.classList.toggle("err", Boolean(err)); };
+  // Wait for the dashboard payload if it is still in flight (after a deploy the Home request can sit behind the
+  // rebuild for ~30 s) — v0.12.12: drawing from an empty state produced a card with an empty ring and "no rating yet".
+  const homeIsCurrent = () => state.home && state.home.team === state.team && state.home.season === state.season;
+  if (!homeIsCurrent()) {
+    say("waiting for the dashboard data — the card is drawn from it…");
+    if (state.homeLoading) { try { await state.homeLoading; } catch (e) { say(`dashboard data failed: ${e.message}`, true); return; } }
+    if (!homeIsCurrent()) { say("no dashboard data for this team yet — load the Dashboard first, then Share", true); return; }
+    say("");
+  }
   // Draw FIRST — every number on the card is already in state.home. The caption comes from the server for parity
   // with the OG tags, but it must never gate the picture: after a deploy the store is busy rebuilding Home and a
   // store-bound request can wait ~30 s (v0.12.11: "loads in like a minute"). Race it against a 4 s local fallback.
@@ -733,6 +747,11 @@ async function openShareCard() {
     const remote = api(`/api/v1/share/${state.team}?season=${state.season}&headline=${sj}`);
     const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("caption request took > 4 s (engine busy)")), 4000));
     copy = await Promise.race([remote, timeout]); copySource = "server";
+    // The server derives its public base from request headers; a proxy that forwards a loopback Host yields
+    // https://127.0.0.1:4040/… — the page knows its true origin, so re-home any URL that is not ours.
+    const rehome = (u) => { try { const x = new URL(u); if (x.host !== location.host) { x.protocol = location.protocol; x.host = location.host; } return x.href; } catch { return u; } };
+    if (copy.url) { const fixed = rehome(copy.url); if (fixed !== copy.url) { copy.text = (copy.text || "").split(copy.url).join(fixed); copy.url = fixed; } }
+    if (copy.image) copy.image = rehome(copy.image);
     remote.catch(() => {}); // if the race lost, the late answer is irrelevant — but never an unhandled rejection
   } catch (e) { say(`caption: local (server ${e.message})`, false); }
   cap.textContent = copy.text; if (copySource === "server") say("");

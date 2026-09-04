@@ -196,7 +196,7 @@ test("home refresh is quiet (v0.12.5): a stale-flagged serve refetches without w
   assert.ok(!js.includes("first look at this team since the data changed"), "no asserted cause the client has not observed");
   assert.ok(js.includes("the engine is busy, or this is the first look at"), "slow message names both possible causes");
   assert.ok(js.includes("if (quiet) { console.warn(`home quiet refetch failed"), "a failed quiet refetch never blanks a good page");
-  const fn = js.slice(js.indexOf("async function loadHome("));
+  const fn = js.slice(js.indexOf("async function loadHomeInner("));
   const body = fn.slice(0, fn.indexOf("\n}\n"));
   assert.ok(body.indexOf("if (!quiet) {") < body.indexOf('["#h-badges"'), "tile wipe is inside the non-quiet branch");
 });
@@ -243,4 +243,14 @@ test("sharecard draws before the caption arrives (v0.12.11): server caption race
   assert.ok(shareRoute.includes("loadHomeSnapshot(store, team, season, THIRD_DOWN_DEFAULT_V1.id)") && !shareRoute.includes("serveHome("), "share copy reads the snapshot, never computes Home");
   const landing = server.slice(server.indexOf("const sm = url.pathname.match"), server.indexOf("await serveStatic(res, url.pathname);"));
   assert.ok(!landing.includes("serveHome("), "/s/TEAM landing never computes Home for a crawler");
+});
+
+test("sharecard waits for the dashboard payload and re-homes server URLs (v0.12.12)", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const fn = js.slice(js.indexOf("async function openShareCard("));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.ok(body.indexOf("if (!homeIsCurrent())") < body.indexOf("const drawn = drawShareCard(canvas)"), "the card waits for state.home before drawing");
+  assert.ok(body.includes("await state.homeLoading"), "awaits the in-flight Home request instead of drawing from nothing");
+  assert.ok(body.includes("x.host !== location.host"), "server URLs are re-homed to the page's origin");
+  assert.ok(js.includes("state.homeLoading = p;"), "loadHome exposes its in-flight promise");
 });
