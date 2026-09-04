@@ -57,4 +57,11 @@ test("record: findObservation returns the latest complete answer for a key; list
   assert.equal((await listRecord(store, { team: "CIN" })).items.length, 1);
   assert.equal((await listRecord(store, { team: "TB", season: 1999 })).items.length, 0);
   assert.ok((await listRecord(store, {})).items.length >= 3);
+  // Pagination by seq cursor: page of 2, then the rest, then exhausted.
+  const p1 = await listRecord(store, { team: "TB", season: 2025, limit: 2 });
+  assert.equal(p1.items.length, 2); assert.equal(p1.total, 3); assert.equal(p1.next_before, p1.items[1].seq);
+  const p2 = await listRecord(store, { team: "TB", season: 2025, limit: 2, beforeSeq: p1.next_before! });
+  assert.equal(p2.items.length, 1); assert.equal(p2.next_before, null);
+  assert.deepEqual([...p1.items, ...p2.items].map((i) => i.id), ["obs_legacy", "obs_b", "obs_a"]);
+  assert.ok(p1.items[0].seq > p1.items[1].seq && p1.items[1].seq > p2.items[0].seq);
 });

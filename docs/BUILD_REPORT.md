@@ -4,6 +4,18 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.7.2 · the feed is the record: persistent, paginated answer history
+
+### SHIPPED
+- **Mark:** "did you get around to making the requests and responses persistent … the entire history of completions present in the feed? Paginated, professional shimmers." Persistence was already true (query_events + observations); presence in the feed was not — the answer feed started empty on every load.
+- `listRecord` paginates by NEDB seq (`beforeSeq` cursor, `next_before`, `total`); `GET /api/v1/record?team&season&limit&before`.
+- Client: on load and on team/season change the feed hydrates with stored completions as full cards (`recordedCard`: statements, answer, `from the record · age`, agree/disagree on the observation, Provenance, Re-ask live), 10 per page, infinite scroll via IntersectionObserver on a "N older answers" sentinel, three skeleton cards while each page loads, empty state when nothing has been asked. Live asks prepend and are tagged with their observation id so hydration never duplicates them; Record-strip taps scroll to the card if it is already in the feed.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: cursor pagination (page/next/exhausted, ordering, total); 66/66 both stores. Live: `/api/v1/record?team=TB&season=2025&limit=2` then `&before=` walks the 5 stored answers in order.
+
+---
+
 ## 2026-09-04 — v0.7.1 · badges for everyone: tier-2 thresholds + SIGNATURE / ACHILLES HEEL identity badges
 
 ### SHIPPED

@@ -3,6 +3,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const state = { team: "TB", season: null, teams: [], seasons: [], coach: false, defs: [], rating: null, meta: null, home: null };
 
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const fmtPct = (v) => (v === null || v === undefined ? "—" : `${v}%`);
 const fmtNum = (v, d = 2) => (v === null || v === undefined ? "—" : Number(v).toFixed(d));
 const signed = (v, d = 2) => (v === null || v === undefined ? "—" : `${v >= 0 ? "+" : ""}${Number(v).toFixed(d)}`);
@@ -61,12 +62,12 @@ async function boot() {
   state.coach = url.searchParams.get("mode") === "coach";
   const ts = $("#team"); ts.innerHTML = state.teams.map((t) => `<option ${t === state.team ? "selected" : ""}>${t}</option>`).join("");
   const ss = $("#season"); ss.innerHTML = state.seasons.map((s) => `<option ${s === state.season ? "selected" : ""}>${s}</option>`).join("");
-  ts.onchange = () => { state.team = ts.value; syncUrl(); loadHome(); renderSuggest(); loadFeed(); };
-  ss.onchange = () => { state.season = Number(ss.value); syncUrl(); loadHome(); };
+  ts.onchange = () => { state.team = ts.value; syncUrl(); loadHome(); renderSuggest(); loadFeed(); loadHistory(true); };
+  ss.onchange = () => { state.season = Number(ss.value); syncUrl(); loadHome();  loadHistory(true); };
   const mode = $("#mode");
   const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); };
   mode.onclick = () => { state.coach = !state.coach; syncUrl(); applyMode(); };
-  applyMode(); renderSuggest(); loadHome(); renderWho(); loadFeed();
+  applyMode(); renderSuggest(); loadHome(); renderWho(); loadFeed(); loadHistory(true);
   $("#take").onsubmit = async (e) => { e.preventDefault(); const text = $("#take-text").value.trim(); if (!text) return; try { const r = await fanPost("/api/v1/fans/posts", { text, team: state.team }); if (r) { $("#take-text").value = ""; loadFeed(); } } catch (err) { alert(err.message + (err.detail ? ` — ${err.detail.join("; ")}` : "")); } };
   $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (!q) return; $("#q").value = ""; ask(q); };
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-ask]"); if (b) ask(b.dataset.ask.replaceAll("Tampa", teamName(state.team))); });
@@ -98,7 +99,18 @@ async function loadRecord() {
   } catch (e) { strip.innerHTML = `<div class="err">record unavailable: ${esc(e.message)}</div>`; }
 }
 function openRecorded(it) {
+  const existing = $(`#feed [data-obs="${CSS.escape(it.id)}"]`);
+  if (existing) { existing.scrollIntoView({ behavior: "smooth", block: "start" }); existing.classList.add("flash"); setTimeout(() => existing.classList.remove("flash"), 1200); return; }
+  const card = recordedCard(it);
+  $("#feed").prepend(card);
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+// A stored completion rendered as a full answer card — no model call, no
+// execution. Same affordances as a live card minus Evidence/Plan (those need
+// the live package): agree/disagree on the observation, Provenance, Re-ask live.
+function recordedCard(it) {
   const card = $("#tpl-answer").content.firstElementChild.cloneNode(true);
+  card.dataset.obs = it.id;
   card.classList.toggle("coach-on", state.coach);
   $(".q", card).textContent = it.question;
   const badges = $(".badges", card), statements = $(".statements", card), prose = $(".prose", card), drawer = $(".drawer", card);
@@ -111,9 +123,38 @@ function openRecorded(it) {
   $(".act-coach", card).onclick = () => card.classList.toggle("coach-on");
   card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => { try { const r = await fanPost("/api/v1/fans/reactions", { target_coll: "football_observations", target_id: it.id, reaction: b.dataset.kind }); if (r) { b.classList.add("on"); b.textContent = `${b.dataset.kind === "agree" ? "👍" : "👎"} ${r.replaced ? "changed" : "saved"} · #${r.chain_index}`; loadRecord(); } } catch (e) { b.textContent = e.message; } }; });
   $(".act-provenance", card).onclick = async () => { try { const pv = await api(`/api/v1/provenance/football_observations/${encodeURIComponent(it.id)}`); drawer.innerHTML = `<div class="h">Provenance</div><pre class="code">${esc(JSON.stringify(pv, null, 2)).slice(0, 6000)}</pre>`; } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
-  $("#feed").prepend(card);
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  return card;
 }
+
+// ---- History: the feed IS the record. Every completion for this team/season,
+// newest first, paginated by seq with infinite scroll. Live asks prepend.
+const history = { before: null, loading: false, done: false, token: 0 };
+function skeletonCard() {
+  return el(`<article class="card skel" aria-hidden="true"><header class="card-head"><div class="skeleton" style="width:60%;height:22px;margin:0"></div><div class="skeleton" style="width:90px;height:18px;margin:0"></div></header><div class="statements"><div class="skeleton" style="width:80%"></div><div class="skeleton" style="width:65%"></div></div><div class="skeleton" style="width:95%"></div><div class="skeleton" style="width:88%"></div><div class="skeleton" style="width:40%"></div></article>`);
+}
+async function loadHistory(reset = false) {
+  const feed = $("#feed");
+  if (reset) { history.before = null; history.done = false; history.loading = false; history.token++; feed.innerHTML = ""; $("#history-sentinel")?.remove(); }
+  if (history.loading || history.done) return;
+  history.loading = true;
+  const token = history.token;
+  const skels = [skeletonCard(), skeletonCard(), skeletonCard()];
+  feed.append(...skels);
+  try {
+    const r = await api(`/api/v1/record?team=${state.team}&season=${state.season}&limit=10${history.before ? `&before=${history.before}` : ""}`);
+    if (token !== history.token) return; // team/season changed mid-flight
+    skels.forEach((k) => k.remove());
+    for (const it of r.items) { const c = recordedCard(it); c.classList.add("recorded"); if (!$(`#feed [data-obs="${CSS.escape(it.id)}"]`)) feed.append(c); }
+    history.before = r.next_before;
+    history.done = r.next_before === null;
+    if (!feed.children.length) feed.append(el(`<div class="card muted" id="history-empty">Nothing asked about ${esc(teamName(state.team))} ${state.season} yet — every answer you get here is kept, with its evidence, and shows up for the next fan.</div>`));
+    if (!history.done) { const sn = el(`<div id="history-sentinel" class="muted" style="text-align:center;padding:10px">${r.total - $$("#feed .recorded").length} older answers · scroll for more</div>`); feed.append(sn); historyObserver.observe(sn); }
+  } catch (e) {
+    skels.forEach((k) => k.remove());
+    feed.append(el(`<div class="card"><div class="err">history unavailable: ${esc(e.message)}</div></div>`));
+  } finally { history.loading = false; }
+}
+const historyObserver = new IntersectionObserver((entries) => { for (const en of entries) if (en.isIntersecting) { en.target.remove(); loadHistory(); } }, { rootMargin: "600px" });
 function renderSiteFoot() {
   const f = $("#site-foot"); if (!f) return;
   const lic = state.meta?.licensing;
@@ -389,8 +430,8 @@ async function ask(question, opts = {}) {
     }
     else if (ev === "token") prose.textContent += d.text;
     else if (ev === "observation") { observation = d; prose.classList.remove("streaming");
-      if (d.from_record) { badges.append(el(`<span class="badge lime" title="Same inputs as when this was answered on ${esc(d.recorded_at)} — served from the record, no model call">from the record · ${esc(ago(d.recorded_at))}</span>`)); const re = el(`<button class="chip">Re-ask live</button>`); re.onclick = () => ask(question, { live: true }); $(".card-foot", card).prepend(re); }
-      else if (d.id) { badges.append(el(`<span class="badge" title="observation ${esc(d.id)}">${esc(d.model)} · ${(d.latency_ms / 1000).toFixed(1)}s</span>`)); loadRecord(); } if (d.answer_truncated) badges.append(el(`<span class="badge red">truncated</span>`)); if (d.skipped) badges.append(el(`<span class="badge amber">${esc(d.skipped)}</span>`)); }
+      if (d.from_record) { card.dataset.obs = d.id; badges.append(el(`<span class="badge lime" title="Same inputs as when this was answered on ${esc(d.recorded_at)} — served from the record, no model call">from the record · ${esc(ago(d.recorded_at))}</span>`)); const re = el(`<button class="chip">Re-ask live</button>`); re.onclick = () => ask(question, { live: true }); $(".card-foot", card).prepend(re); }
+      else if (d.id) { card.dataset.obs = d.id; badges.append(el(`<span class="badge" title="observation ${esc(d.id)}">${esc(d.model)} · ${(d.latency_ms / 1000).toFixed(1)}s</span>`)); loadRecord(); } if (d.answer_truncated) badges.append(el(`<span class="badge red">truncated</span>`)); if (d.skipped) badges.append(el(`<span class="badge amber">${esc(d.skipped)}</span>`)); }
     else if (ev === "error") { prose.classList.remove("streaming"); statements.querySelectorAll(".skeleton").forEach((x) => x.remove()); statements.append(el(`<div class="err">${esc(d.error)}${d.errors ? ` — ${esc(d.errors.join("; "))}` : ""}</div>`)); }
     else if (ev === "done") prose.classList.remove("streaming");
   }

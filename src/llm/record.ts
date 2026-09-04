@@ -63,7 +63,12 @@ export interface RecordItem {
 }
 
 /** A team's record, newest first, with fan reaction tallies joined. */
-export async function listRecord(store: Store, opts: { team?: string; season?: number; limit?: number } = {}): Promise<{ items: RecordItem[]; seq: number; head: string }> {
+/**
+ * Paginated by NEDB seq (stable, monotone): pass `beforeSeq` = the smallest seq
+ * of the previous page to get the next older page. `next_before` is null when
+ * the history is exhausted.
+ */
+export async function listRecord(store: Store, opts: { team?: string; season?: number; limit?: number; beforeSeq?: number } = {}): Promise<{ items: RecordItem[]; seq: number; head: string; total: number; next_before: number | null }> {
   // Observations stored before v0.7.0 carry no team/season fields; derive them
   // from the stored query plan so the record is complete from day one.
   const teamOf = (o: ObservationRecord): string | null => o.team ?? (typeof (o.query_plan?.filters as { team?: unknown })?.team === "string" ? String((o.query_plan.filters as { team: string }).team).toUpperCase() : null);
@@ -72,8 +77,13 @@ export async function listRecord(store: Store, opts: { team?: string; season?: n
   let rows = r.rows.filter((x) => x.data.answer && !x.data.error && !x.data.answer_truncated);
   if (opts.team) rows = rows.filter((x) => teamOf(x.data) === opts.team);
   if (opts.season !== undefined) rows = rows.filter((x) => seasonOf(x.data) === opts.season);
+  const total = rows.length;
+  if (opts.beforeSeq !== undefined) rows = rows.filter((x) => x._seq < opts.beforeSeq!);
   rows.sort((a, b) => b._seq - a._seq);
-  rows = rows.slice(0, opts.limit ?? 30);
+  const limit = opts.limit ?? 30;
+  const hasMore = rows.length > limit;
+  rows = rows.slice(0, limit);
+  const next_before = hasMore && rows.length ? rows[rows.length - 1]._seq : null;
   const counts = new Map<string, Record<ReactionKind, number>>();
   if (rows.length) {
     const rx = await store.query<FanReaction>(`FROM ${SR.reactions} WHERE target_coll = ${nqlStr(COLL.observations)}`);
@@ -93,6 +103,6 @@ export async function listRecord(store: Store, opts: { team?: string; season?: n
       evidence_count: x.data.evidence_count, evidence_key: x.data.evidence_key ?? null,
       reactions: counts.get(x._id) ?? { like: 0, agree: 0, disagree: 0 },
     })),
-    seq: r.seq, head: r.head,
+    seq: r.seq, head: r.head, total, next_before,
   };
 }
