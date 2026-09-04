@@ -44,7 +44,7 @@ test("client: Feed is a first-class view — tabs in markup, setView wired, ask(
   assert.match(html, /id="feedview"/);
   assert.match(src, /function setView\(/);
   assert.match(src, /function pollFeed\(/);
-  assert.match(src, /if \(state\.view !== "feed"\) setView\("feed", \{ silent: true \}\);/);
+  assert.match(src, /function showCard\(card[^)]*\) \{\s*if \(state\.view !== "feed"\) \{ setView\("feed", \{ silent: true \}\); syncUrl\(\); \}/);
   const css = readFileSync(path.join(here, "../web/styles.css"), "utf8");
   assert.match(css, /main\.view-home #feedview \{ display: none; \}/);
   assert.match(css, /main\.view-feed #home \{ display: none; \}/);
@@ -96,4 +96,15 @@ test("coach mode is a real mode: deck markup, loader, ask carries mode, fan-laye
   assert.match(src, /mode: state\.coach \? "coach" : "fan"/);
   const css = readFileSync(path.join(here, "../web/styles.css"), "utf8");
   assert.match(css, /\.mode-coach #tile-feed, \.mode-coach \[data-rate\], \.mode-coach #take/);
+});
+
+test("every card dropped into #feed goes through showCard (v0.9.2: League / Rate differently posted into the hidden Feed view)", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const direct = js.split("\n").filter((l) => l.includes('$("#feed").prepend(') && !l.includes("function showCard") && !/^\s*\$\("#feed"\)\.prepend\(card\);\s*$/.test(l));
+  assert.deepEqual(direct, [], "prepend into #feed outside showCard — the card is invisible from the Dashboard");
+  assert.match(js, /function showCard\(card[^)]*\) \{\s*if \(state\.view !== "feed"\) \{ setView\("feed", \{ silent: true \}\); syncUrl\(\); \}/);
+  for (const fn of ["rateDifferently", "showLeague", "rateTile", "openRecorded"]) {
+    const body = js.slice(js.indexOf(`function ${fn}(`));
+    assert.ok(body.slice(0, body.indexOf("\n}\n")).includes("showCard("), `${fn} must render via showCard`);
+  }
 });

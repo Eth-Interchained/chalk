@@ -72,7 +72,7 @@ async function api(path, opts) {
 
 // ------------------------------------------------------------------ boot
 async function boot() {
-  try { state.meta = await api("/api/v1/meta"); renderSiteFoot(); } catch (e) { $("#feed").prepend(el(`<div class="card"><div class="err">CHALK API unreachable: ${esc(e.message)}</div></div>`)); return; }
+  try { state.meta = await api("/api/v1/meta"); renderSiteFoot(); } catch (e) { (document.querySelector("main") ?? document.body).prepend(el(`<div class="card"><div class="err">CHALK API unreachable: ${esc(e.message)}</div></div>`)); return; }
   state.teams = state.meta.teams; state.seasons = state.meta.seasons; state.defs = state.meta.rating_definitions;
   const url = new URL(location.href);
   state.team = (url.searchParams.get("team") || state.meta.defaults.team || "TB").toUpperCase();
@@ -141,9 +141,7 @@ function openRecorded(it) {
   if (state.view !== "feed") setView("feed");
   const existing = $(`#feed [data-obs="${CSS.escape(it.id)}"]`);
   if (existing) { existing.scrollIntoView({ behavior: "smooth", block: "start" }); existing.classList.add("flash"); setTimeout(() => existing.classList.remove("flash"), 1200); return; }
-  const card = recordedCard(it);
-  $("#feed").prepend(card);
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  showCard(recordedCard(it));
 }
 // A stored completion rendered as a full answer card — no model call, no
 // execution. Same affordances as a live card minus Evidence/Plan (those need
@@ -217,6 +215,16 @@ function setView(v, opts = {}) {
   document.querySelectorAll(".view-tab").forEach((b) => b.classList.toggle("on", b.dataset.view === state.view));
   if (!opts.silent) { syncUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); tele("tab"); }
   if (state.view === "feed") pollFeed();
+}
+// Every interactive card (answer, league table, rate-differently, rate tile, handle card) lives in
+// #feed, which sits inside #feedview — hidden while the Dashboard is showing. A card prepended from the
+// Dashboard without switching views lands in a display:none container: the button "does nothing".
+// (v0.9.2 — League and Rate differently did exactly that.) Always go through here.
+function showCard(card, opts = {}) {
+  if (state.view !== "feed") { setView("feed", { silent: true }); syncUrl(); }
+  $("#feed").prepend(card);
+  card.scrollIntoView({ behavior: "smooth", block: opts.block ?? "start" });
+  return card;
 }
 // Newest answers since the top of the feed — from this tab or any other fan. Prepends unseen ones with a flash.
 let feedPolling = false;
@@ -474,7 +482,7 @@ function whoDialog() {
   d.append(form);
   d.querySelector("[data-forget]")?.addEventListener("click", () => { localStorage.removeItem(ID_KEY); renderWho(); card.remove(); });
   d.querySelector("[data-chain]")?.addEventListener("click", async () => { const c = await api(`/api/v1/fans/${id.fan_id}`); const box = el(`<div></div>`); box.append(el(`<div class="h">Chain · ${c.length} writes · ${c.verified ? "every link verified" : "history in chain (re-rated)"}</div>`)); const prov = el(`<div class="prov"></div>`); for (const l of c.links) prov.append(el(`<div><span class="c">${esc(l.kind)}</span><span>#${l.chain_index} ${esc(l.created_at.slice(0, 16))}</span><span class="hsh">${esc(l.hash.slice(0, 12))} ← ${esc((l.prev || "genesis").slice(0, 12))}</span></div>`)); box.append(prov); d.append(box); });
-  $("#feed").prepend(card); card.scrollIntoView({ behavior: "smooth" });
+  showCard(card, { block: "nearest" });
 }
 async function requireIdentity() { const id = loadIdentity(); if (id) return id; whoDialog(); return null; }
 async function fanPost(path, body) {
@@ -508,7 +516,7 @@ function rateTile(r) {
   const range = card.querySelector("input[type=range]"); const big = $("#rv", card);
   range.oninput = () => { big.textContent = range.value; };
   $(".go", card).onclick = async () => { try { const res = await fanPost("/api/v1/fans/ratings", { team: state.team, season: state.season, subject: r.subject, score: Number(range.value), snapshot_id: r.snapshot_id, chalk_score: r.score }); if (!res) return; const c = res.consensus; $(".out", card).textContent = `saved (#${res.chain_index} in your chain) · fans ${c.mean} vs CHALK ${c.chalk_score} (${c.delta >= 0 ? "+" : ""}${c.delta}) over ${c.fans} fan${c.fans === 1 ? "" : "s"}`; loadConsensus(); loadFeed(); } catch (e) { $(".out", card).textContent = e.message; } };
-  $("#feed").prepend(card); card.scrollIntoView({ behavior: "smooth" });
+  showCard(card, { block: "nearest" });
 }
 
 // ------------------------------------------------------------------- ask
@@ -517,10 +525,8 @@ async function ask(question, opts = {}) {
   card.classList.toggle("coach-on", state.coach);
   $(".q", card).textContent = question;
   const badges = $(".badges", card), statements = $(".statements", card), prose = $(".prose", card), coach = $(".coach", card), drawer = $(".drawer", card);
-  if (state.view !== "feed") setView("feed", { silent: true });
-  syncUrl(); tele("ask");
-  $("#feed").prepend(card);
-  card.scrollIntoView({ behavior: "smooth", block: "start" });
+  tele("ask");
+  showCard(card);
   let evidence = null, planInfo = null, observation = null;
   prose.classList.add("streaming");
   badges.append(el(`<span class="badge working">planning</span>`));
@@ -687,7 +693,7 @@ function renderCoach(d) {
 // -------------------------------------------------------- rate differently
 async function rateDifferently() {
   const card = el(`<article class="card"><header class="card-head"><div class="q">Rate differently</div></header><div class="muted">Pick a saved formula or build your own. Weights are normalized; every score exposes its formula.</div><div class="drawer"></div></article>`);
-  $("#feed").prepend(card);
+  showCard(card);
   const drawer = $(".drawer", card);
   const defs = await api("/api/v1/rating-definitions");
   const sel = el(`<div class="suggest" style="padding:6px 0"></div>`);
@@ -708,12 +714,11 @@ async function rateDifferently() {
     catch (err) { $(".out", form).textContent = `${err.message}${err.detail ? ` — ${JSON.stringify(err.detail)}` : ""}`; }
   };
   drawer.append(form);
-  card.scrollIntoView({ behavior: "smooth" });
 }
 
 async function showLeague() {
   const card = el(`<article class="card"><header class="card-head"><div class="q">Third Down · League</div></header><div class="drawer"><div class="muted">loading…</div></div></article>`);
-  $("#feed").prepend(card);
+  showCard(card);
   const drawer = $(".drawer", card);
   try {
     const def = state.rating?.snapshot?.definition_id;
@@ -724,7 +729,6 @@ async function showLeague() {
     for (const r of l.table) { const tr = el(`<tr style="${r.team === state.team ? "color:var(--accent)" : ""}"><td class="num">${r.rank}</td><td>${esc(r.team)}</td><td class="num">${r.score ?? "—"}${r.provisional ? "*" : ""}</td><td class="num">${r.attempts}</td><td class="num">${fmtPct(r.conversion_pct)}</td><td class="num">${fmtNum(r.epa_per_play, 3)}</td><td class="num">${fmtPct(r.success_pct)}</td></tr>`); tr.style.cursor = "pointer"; tr.onclick = () => { state.team = r.team; $("#team").value = r.team; syncUrl(); loadHome(); renderSuggest(); window.scrollTo({ top: 0, behavior: "smooth" }); }; tb.append(tr); }
     drawer.append(t);
   } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
-  card.scrollIntoView({ behavior: "smooth" });
 }
 
 // A failure during boot must be visible on the page — a dark shell with nothing on it is indistinguishable from a network outage.
