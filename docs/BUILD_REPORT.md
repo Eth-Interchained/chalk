@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.7 · your own pick was invisible to you for a whole cache TTL
+
+- **Mark (MIA):** "Who you got … neither is selectable … the server logs the click events but its not persisted on the client … 5 minutes later it just works."
+- **Root cause 1 (store, mine):** the read-through NQL cache (`CHALK_QUERY_CACHE_MS`, 90 s default) was never invalidated by CHALK's own writes — by design for the play/game scans that make Home fast, but fan reads (`FROM sr_picks …`, hype, posts) go through the same cache. Your pick was on the chain; the next read answered from the copy taken before it. Hype looked fine only because your value paints from localStorage. **Fix:** `invalidateCollection(coll)` on both stores — `put`/`batchPut` drop cached answers whose NQL reads the written collection (regex on `FROM <coll>`), and nothing else. Play scans untouched; the worker store invalidates on the worker where the cache lives.
+- **Root cause 2 (client, mine):** `renderPick` looked up your picks for `state.season` (2025) while the next game is `2026_01_…` — a 2026 pick could never match, so the button never lit even once the cache expired… except it did at 5 minutes because the crowd split (per game, no season) refreshed and your pick counted in it. **Fix:** look up by the game's season.
+- Tests: read-after-write with the cache on (written collection refreshed in every cached shape; unrelated cached scan kept) on both stores; static guard. 108/108. Live on the local store: see PR.
+
 ## 2026-09-04 — v0.12.6 · the favorite is local-first
 
 - **Mark:** "default team should be persistent for a user right?" It was (v0.11.0) — but only after creating a fan handle: ★ went through `fanPost`, which opens the identity dialog when there is none, and set nothing. Persistence gated behind identity is the wrong order.

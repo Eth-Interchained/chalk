@@ -485,7 +485,9 @@ async function renderPick(g, n) {
   const id = loadIdentity();
   const [crowd, mine] = await Promise.all([
     api(`/api/v1/fans/picks/game?game_id=${encodeURIComponent(g.id)}`).catch((e) => ({ total: 0, by_team: {}, __err: e.message })),
-    id ? api(`/api/v1/fans/picks?fan_id=${id.fan_id}&season=${state.season}`).catch((e) => ({ picks: [], record: null, __err: e.message })) : Promise.resolve({ picks: [], record: null }),
+    // The next game may belong to the NEXT season (2026_01 while the dashboard shows 2025): look up picks by the
+    // game's season, or a pick on it can never show as yours (v0.12.7).
+    id ? api(`/api/v1/fans/picks?fan_id=${id.fan_id}&season=${g.season ?? state.season}`).catch((e) => ({ picks: [], record: null, __err: e.message })) : Promise.resolve({ picks: [], record: null }),
   ]);
   if (!$("#pick")) return;
   const my = mine.picks.find((p) => p.game_id === g.id)?.pick ?? null;
