@@ -367,3 +367,6 @@ main.view-feed .team-hero { display: none; }
 
 .site-foot .legal { color: var(--fg-2); }
 .site-foot .legal b { color: var(--fg); letter-spacing: .04em; }
+
+.brand-mark { width: 28px; height: 28px; border-radius: 7px; align-self: center; margin-right: 2px; filter: drop-shadow(0 2px 6px rgba(0,0,0,.4)); }
+.brand { align-items: center; }
