@@ -512,15 +512,24 @@ async function renderHype(week) {
   box.querySelectorAll("[data-h]").forEach((btn) => { btn.onclick = async () => { try { const r = await fanPost("/api/v1/fans/hype", { team: state.team, season: state.season, week, value: Number(btn.dataset.h) }); if (!r) return; try { localStorage.setItem(mineKey, String(r.mine)); } catch {} tele("hype"); renderHype(week); } catch (e) { $(".note", box).innerHTML = `<span class="err">${esc(e.message)}</span>`; } }; });
 }
 function renderFav() { const b = $("#fav"); if (!b) return; const on = state.favorite === state.team; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); b.textContent = on ? "★ my team" : "☆ my team"; }
+// Favorite is local-first (v0.12.6): the star works for anyone, instantly, with no handle — persistence for a
+// user must not be gated behind identity. When a handle exists (now or later) the favorite also rides the
+// fan chain, so it follows you across devices. Starring the current favorite un-stars it locally (the chain
+// keeps history; the next star replaces).
 async function setFavorite() {
-  try {
-    const r = await fanPost("/api/v1/fans/favorites", { team: state.team }); if (!r) return;
-    state.favorite = r.team; try { localStorage.setItem(FAV_KEY, r.team); } catch {}
-    renderFav(); tele("favorite");
-  } catch (e) { alert(e.message); }
+  const un = state.favorite === state.team;
+  state.favorite = un ? null : state.team;
+  try { if (un) localStorage.removeItem(FAV_KEY); else localStorage.setItem(FAV_KEY, state.team); } catch (e) { console.warn(`favorite: localStorage unavailable (${e.message}) — kept for this tab only`); }
+  renderFav(); tele("favorite");
+  if (un) return;
+  const id = loadIdentity(); if (!id) return; // no handle yet: local only, pushed on the next boot after one exists
+  try { await fanPost("/api/v1/fans/favorites", { team: state.team }); }
+  catch (e) { console.warn(`favorite: saved locally, chain write failed — ${e.message}`); }
 }
 async function syncFavoriteFromServer() {
   const id = loadIdentity(); if (!id) return;
+  // A local favorite chosen before the handle existed goes up once the handle is here.
+  if (state.favorite) { try { const cur = await api(`/api/v1/fans/favorite?fan_id=${id.fan_id}`); if (cur.team !== state.favorite) { await fanPost("/api/v1/fans/favorites", { team: state.favorite }); return; } } catch (e) { console.warn(`favorite: push to chain failed — ${e.message}`); } return; }
   try { const r = await api(`/api/v1/fans/favorite?fan_id=${id.fan_id}`); if (r.team && r.team !== state.favorite) { state.favorite = r.team; try { localStorage.setItem(FAV_KEY, r.team); } catch {} renderFav(); } }
   catch (e) { console.warn(`favorite: server sync failed — ${e.message}`); }
 }

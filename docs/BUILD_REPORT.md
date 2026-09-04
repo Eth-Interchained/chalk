@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.6 · the favorite is local-first
+
+- **Mark:** "default team should be persistent for a user right?" It was (v0.11.0) — but only after creating a fan handle: ★ went through `fanPost`, which opens the identity dialog when there is none, and set nothing. Persistence gated behind identity is the wrong order.
+- **Fix:** ★ writes `localStorage` first and re-renders immediately — works for anyone, no handle. If a handle exists the favorite also goes on the fan chain (cross-device); if not, it is pushed on the next boot after a handle exists (`syncFavoriteFromServer` compares and writes). Starring the current favorite un-stars it locally. Every failure path logs why and keeps the local value.
+- Boot order unchanged: URL `?team=` → favorite → server default → TB.
+- Tests: static guard. 106/106 both stores. Not browser-verified (Mark's rule).
+
 ## 2026-09-04 — v0.12.5 · the cache held; the client kept saying it hadn't
 
 - **Mark:** "it keeps doing that every 30s? there is no new data why is it recomputing … why cant the cache hold?"
