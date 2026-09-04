@@ -1,6 +1,6 @@
 {
   "name": "chalk-engine",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "CHALK — local-first football intelligence engine behind sports-rater.com. The database knows. Deterministic code calculates. The model interprets. Provenance proves.",
   "type": "module",
   "license": "BUSL-1.1",
@@ -15,8 +15,8 @@
     "serve": "node bin/chalk.ts serve"
   },
   "dependencies": {
-    "nedb-engine": "^2.8.2",
-    "nedb-engine-client": "^2.8.2",
+    "nedb-engine": "^2.8.4",
+    "nedb-engine-client": "^2.8.4",
     "sentinel-blocks": "^1.0.0"
   },
   "devDependencies": {
