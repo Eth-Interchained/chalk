@@ -83,7 +83,7 @@ async function boot() {
   ts.onchange = () => { state.team = ts.value; syncUrl(); loadHome(); renderSuggest(); loadFeed(); loadHistory(true); };
   ss.onchange = () => { state.season = Number(ss.value); syncUrl(); loadHome();  loadHistory(true); };
   const mode = $("#mode");
-  const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("mode-coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); };
+  const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("mode-coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); $("#coach-deck").hidden = !state.coach; if (state.coach) loadCoachDeck(); };
   mode.onclick = () => { state.coach = !state.coach; syncUrl(); applyMode(); };
   state.view = url.searchParams.get("view") === "feed" ? "feed" : "home";
   document.querySelectorAll(".view-tab").forEach((b) => { b.onclick = () => setView(b.dataset.view); });
@@ -155,6 +155,7 @@ function recordedCard(it) {
   $(".q", card).textContent = it.question;
   const badges = $(".badges", card), statements = $(".statements", card), prose = $(".prose", card), drawer = $(".drawer", card);
   badges.append(el(`<span class="badge lime">${esc(it.intent)}</span>`), el(`<span class="badge lime" title="stored observation ${esc(it.id)}">from the record · ${esc(ago(it.created_at))}</span>`), el(`<span class="badge">${esc(it.model)}</span>`));
+  if (it.register === "coach") badges.append(el(`<span class="badge">coach read</span>`));
   for (const st of it.statements) statements.append(el(`<div class="statement">${esc(st)}</div>`));
   prose.textContent = it.answer ?? "";
   $(".coach", card).innerHTML = `<div class="muted">Coach view needs the live evidence package — use Re-ask live.</div>`;
@@ -164,6 +165,47 @@ function recordedCard(it) {
   card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => { try { const r = await fanPost("/api/v1/fans/reactions", { target_coll: "football_observations", target_id: it.id, reaction: b.dataset.kind }); if (r) { b.classList.add("on"); b.textContent = `${b.dataset.kind === "agree" ? "👍" : "👎"} ${r.replaced ? "changed" : "saved"} · #${r.chain_index}`; loadRecord(); } } catch (e) { b.textContent = e.message; } }; });
   $(".act-provenance", card).onclick = async () => { drawer.innerHTML = `<div class="muted">tracing football_observations/${esc(it.id)}…</div>`; try { const pv = await api(`/api/v1/provenance/football_observations/${encodeURIComponent(it.id)}`); drawer.innerHTML = ""; drawer.append(renderProvenance(pv, "football_observations", it.id)); } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
   return card;
+}
+
+// ---- Coach deck: the room a coach wants — tables, percentiles, situations. Fetched only in coach mode.
+const SUBJECTS = ["third_down", "offense", "defense", "red_zone", "explosiveness", "ball_security"];
+function tblEl(rows, cols) {
+  if (!rows?.length) return el(`<div class="muted">none</div>`);
+  const t = el(`<div class="tbl"><table><thead><tr>${cols.map((c) => `<th class="${c.num ? "num" : ""}">${esc(c.h)}</th>`).join("")}</tr></thead><tbody></tbody></table></div>`);
+  const tb = $("tbody", t);
+  for (const r of rows) tb.append(el(`<tr>${cols.map((c) => `<td class="${c.num ? "num" : ""}">${esc(c.f ? c.f(r) : r[c.k] ?? "—")}</td>`).join("")}</tr>`));
+  return t;
+}
+let coachDeckKey = "";
+async function loadCoachDeck() {
+  const key = `${state.team}|${state.season}`;
+  if (coachDeckKey === key) return; // already built for this team/season
+  coachDeckKey = key;
+  const box = $("#coach-panels"); box.innerHTML = `<div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:90%"></div><div class="skeleton" style="width:80%"></div>`;
+  const q = `team=${state.team}&season=${state.season}`;
+  const get = (u) => api(u).catch((e) => ({ __err: e.message }));
+  const [td, ...subs] = await Promise.all([get(`/api/v1/ratings/third-down?${q}`), ...SUBJECTS.slice(1).map((sj) => get(`/api/v1/ratings/${sj.replace("_", "-")}?${q}`))]);
+  const [scan, third, opp] = await Promise.all([get(`/api/v1/analyses/scan?${q}&side=offense`), get(`/api/v1/analyses/third-down?${q}`), get(`/api/v1/reports/opponent?${q}`)]);
+  if (coachDeckKey !== key) return;
+  box.innerHTML = "";
+  const panel = (title, sub, node) => { const p = el(`<section class="tile cpanel"><div class="tile-h">${esc(title)} <span class="muted">${esc(sub ?? "")}</span></div></section>`); p.append(node); box.append(p); };
+  const compCols = [{ h: "component", f: (c) => c.label ?? c.metric }, { h: "w", f: (c) => `${Math.round((c.weight ?? 0) * 100)}%`, num: 1 }, { h: "raw", f: (c) => (String(c.metric).includes("rate") ? fmtPct(c.raw === null ? null : Math.round(c.raw * 1000) / 10) : fmtNum(c.raw, 3)), num: 1 }, { h: "lg med", f: (c) => (String(c.metric).includes("rate") ? fmtPct(c.population_median === null ? null : Math.round(c.population_median * 1000) / 10) : fmtNum(c.population_median, 3)), num: 1 }, { h: "pct", f: (c) => (c.normalized === null || c.normalized === undefined ? "—" : Math.round(c.normalized * 100)), num: 1 }, { h: "rank", k: "rank", num: 1 }, { h: "pts", f: (c) => fmtNum(c.contribution, 1), num: 1 }];
+  const ratings = [{ subject: "third_down", r: td }, ...SUBJECTS.slice(1).map((sj, i) => ({ subject: sj, r: subs[i] }))];
+  for (const { subject, r } of ratings) {
+    if (!r || r.__err) { panel(subject.replace("_", " "), "unavailable", el(`<div class="err">${esc(r?.__err ?? "no data")}</div>`)); continue; }
+    const snap = r.snapshot; const of = Array.isArray(r.league) ? r.league.length : (r.population ?? "?");
+    panel(`${subject.replace("_", " ")} · ${snap.score}/100`, `#${r.rank} of ${of} · ${snap.definition_name ?? snap.definition_id} · n=${snap.sample_size}${snap.provisional ? " · provisional" : ""}`, tblEl(snap.components, compCols));
+  }
+  if (third && !third.__err) { const a = third.summary; panel("Third down by distance", `${a.conversions}/${a.attempts} (${fmtPct(a.conversion_pct)}) · ${a.confidence}`, tblEl(a.by_distance, [{ h: "to go", k: "distance" }, { h: "att", k: "attempts", num: 1 }, { h: "conv", k: "conversions", num: 1 }, { h: "conv%", f: (r) => fmtPct(r.conversion_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }, { h: "pass%", f: (r) => fmtPct(r.pass_pct), num: 1 }])); }
+  if (scan && !scan.__err) {
+    const row = (b) => ({ situation: b.label, snaps: b.metrics?.attempts, epa: b.metrics?.epa_per_play, d: b.epa_delta_vs_team, succ: b.metrics?.success_rate });
+    const cols = [{ h: "situation", k: "situation" }, { h: "snaps", k: "snaps", num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa, 3), num: 1 }, { h: "vs team", f: (r) => fmtNum(r.d, 3), num: 1 }, { h: "succ%", f: (r) => fmtPct(r.succ === null || r.succ === undefined ? null : Math.round(r.succ * 1000) / 10), num: 1 }];
+    panel("Weakest situations", `baseline ${fmtNum(scan.baseline?.epa_per_play, 3)} EPA/play · min ${scan.min_sample} snaps`, tblEl((scan.weakest ?? []).slice(0, 8).map(row), cols));
+    panel("Strongest situations", "", tblEl((scan.strongest ?? []).slice(0, 6).map(row), cols));
+  }
+  if (opp && !opp.__err) { const o = opp.summary; panel(`Opponent · ${o.opponent} ${o.opponent_side}`, `${o.baseline?.snaps ?? "?"} snaps · ${fmtPct(o.baseline?.pass_pct)} pass · ${fmtNum(o.baseline?.epa_per_play, 3)} EPA/play`, tblEl(o.sections, [{ h: "situation", k: "situation" }, { h: "snaps", k: "snaps", num: 1 }, { h: "pass%", f: (r) => fmtPct(r.pass_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }, { h: "succ%", f: (r) => fmtPct(r.success_pct), num: 1 }, { h: "conv%", f: (r) => fmtPct(r.conversion_pct), num: 1 }])); }
+  else if (opp?.__err) panel("Opponent", "", el(`<div class="muted">${esc(opp.__err)}</div>`));
+  $("#coach-sub").textContent = `${state.team} ${state.season} · ${ratings.filter((x) => x.r && !x.r.__err).length} ratings · deterministic, every number traceable`;
 }
 
 // ---- Views: Dashboard (team home) | Feed (every completion, live asks on top).
@@ -241,6 +283,7 @@ let homeRefreshAttempts = 0;
 async function loadHome(defId) {
   applyTeamTheme(state.team);
   setHero(state.team);
+  coachDeckKey = "";
   $("#home").classList.add("loading");
   $("#ring").classList.add("loading");
   $("#h-abbr").textContent = state.team;
@@ -271,6 +314,7 @@ async function loadHome(defId) {
     renderTrendChips(h.ratings);
     loadGames();
     loadRecord();
+    if (state.coach) loadCoachDeck();
   } catch (e) { clearTimeout(slow); $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
     $("#rc-score").textContent = "–";
     $("#rc-line1").innerHTML = `<span class="err">${esc(e.message)}</span>`;
@@ -483,7 +527,7 @@ async function ask(question, opts = {}) {
   // Skeleton lines stand in for the deterministic statements until the evidence event lands.
   statements.innerHTML = `<div class="skeleton" style="width:78%"></div><div class="skeleton" style="width:62%"></div><div class="skeleton" style="width:70%"></div>`;
   const url = new URL(location.href);
-  const body = { question, team: state.team, season: state.season, game_id: url.searchParams.get("game_id") || undefined, live: opts.live === true || undefined };
+  const body = { question, team: state.team, season: state.season, game_id: url.searchParams.get("game_id") || undefined, live: opts.live === true || undefined, mode: state.coach ? "coach" : "fan" };
   try {
     const res = await fetch("/api/v1/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok || !res.body) throw new Error(`${res.status} ${await res.text()}`);
@@ -509,6 +553,7 @@ async function ask(question, opts = {}) {
     }
     else if (ev === "token") prose.textContent += d.text;
     else if (ev === "observation") { observation = d; prose.classList.remove("streaming");
+      if (d.register === "coach" || (state.coach && !d.from_record)) badges.append(el(`<span class="badge">coach read</span>`));
       if (d.from_record) { card.dataset.obs = d.id; badges.append(el(`<span class="badge lime" title="Same inputs as when this was answered on ${esc(d.recorded_at)} — served from the record, no model call">from the record · ${esc(ago(d.recorded_at))}</span>`)); const re = el(`<button class="chip">Re-ask live</button>`); re.onclick = () => ask(question, { live: true }); $(".card-foot", card).prepend(re); }
       else if (d.id) { card.dataset.obs = d.id; badges.append(el(`<span class="badge" title="observation ${esc(d.id)}">${esc(d.model)} · ${(d.latency_ms / 1000).toFixed(1)}s</span>`)); loadRecord(); } if (d.answer_truncated) badges.append(el(`<span class="badge red">truncated</span>`)); if (d.skipped) badges.append(el(`<span class="badge amber">${esc(d.skipped)}</span>`)); }
     else if (ev === "error") { prose.classList.remove("streaming"); statements.querySelectorAll(".skeleton").forEach((x) => x.remove()); statements.append(el(`<div class="err">${esc(d.error)}${d.errors ? ` — ${esc(d.errors.join("; "))}` : ""}</div>`)); }

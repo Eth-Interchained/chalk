@@ -88,3 +88,12 @@ test("brand: favicon/app-icon set, manifest and header mark are present and cons
     assert.match(html, /rel="icon" href="\/icons\/favicon.svg"/); assert.match(html, /rel="apple-touch-icon"/); assert.match(html, /rel="manifest" href="\/site.webmanifest"/); assert.match(html, /class="brand-mark" src="\/icons\/mark.svg"/);
   }
 });
+
+test("coach mode is a real mode: deck markup, loader, ask carries mode, fan-layer controls hidden", () => {
+  const html = readFileSync(path.join(here, "../web/index.html"), "utf8");
+  assert.match(html, /id="coach-deck"/); assert.match(html, /id="coach-panels"/);
+  assert.match(src, /async function loadCoachDeck\(/);
+  assert.match(src, /mode: state\.coach \? "coach" : "fan"/);
+  const css = readFileSync(path.join(here, "../web/styles.css"), "utf8");
+  assert.match(css, /\.mode-coach #tile-feed, \.mode-coach \[data-rate\], \.mode-coach #take/);
+});

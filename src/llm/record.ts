@@ -30,9 +30,10 @@ import { hiddenSet } from "../server/moderation.ts";
 export const RECORD_VERSION = "1";
 
 /** Deterministic key of everything the explainer saw. Independent of question wording and plan id. */
-export function evidenceKey(plan: Pick<QueryPlan, "intent" | "filters">, pkg: EvidencePackage, promptVersion = PROMPT_VERSION): string {
+export function evidenceKey(plan: Pick<QueryPlan, "intent" | "filters">, pkg: EvidencePackage, promptVersion = PROMPT_VERSION, register: "fan" | "coach" = "fan"): string {
   return hashPayload({
     v: RECORD_VERSION,
+    register,
     intent: plan.intent,
     filters: plan.filters,
     kind: pkg.kind,
@@ -66,6 +67,7 @@ export interface RecordItem {
   latency_ms: number;
   evidence_count: number;
   evidence_key: string | null;
+  register: "fan" | "coach";
   reactions: Record<ReactionKind, number>;
 }
 
@@ -107,7 +109,7 @@ export async function listRecord(store: Store, opts: { team?: string; season?: n
       question: x.data.question, intent: x.data.intent,
       statements: x.data.statements ?? [],
       answer: x.data.answer, model: x.data.model, created_at: x.data.created_at, latency_ms: x.data.latency_ms,
-      evidence_count: x.data.evidence_count, evidence_key: x.data.evidence_key ?? null,
+      evidence_count: x.data.evidence_count, evidence_key: x.data.evidence_key ?? null, register: x.data.register ?? "fan",
       reactions: counts.get(x._id) ?? { like: 0, agree: 0, disagree: 0 },
     })),
     seq: r.seq, head: r.head, total, next_before,

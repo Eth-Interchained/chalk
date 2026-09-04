@@ -526,7 +526,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
         if (!planned.ok || !planned.plan) throw new HttpError(422, `could not re-plan: ${planned.errors.join("; ")}`);
         const exec = await execute(planned.plan, { store, log });
         let fresh: ObservationRecord | null = null; let freshHash: string | null = null; let llmError: string | null = null;
-        for await (const ev of explain(llm, store, old.data.question, planned.plan, exec.package, { team, season }, log)) {
+        for await (const ev of explain(llm, store, old.data.question, planned.plan, exec.package, { team, season, register: old.data.register ?? "fan" }, log)) {
           if (ev.type === "observation") { fresh = ev.observation; freshHash = ev.hash; }
           else if (ev.type === "error") llmError = ev.error;
         }
@@ -616,7 +616,8 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
   }
 
   async function ask(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = (await readJson(req)) as { question?: string; team?: string; season?: number; game_id?: string; play_id?: string; explain?: boolean; live?: boolean };
+    const body = (await readJson(req)) as { question?: string; team?: string; season?: number; game_id?: string; play_id?: string; explain?: boolean; live?: boolean; mode?: string };
+    const register: "fan" | "coach" = body.mode === "coach" ? "coach" : "fan";
     if (!body.question || typeof body.question !== "string") throw new HttpError(400, "question required");
     const question = body.question.trim().slice(0, 500);
     const started = Date.now();
@@ -654,17 +655,17 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
         // The Record: same inputs (intent, filters, calculation hashes, summary,
         // prompt version) => serve the stored answer instead of streaming a new
         // one. `live: true` forces a fresh stream; the old answer is kept.
-        const key = evidenceKey(plan, pkg);
-        qe.evidence_key = key;
+        const key = evidenceKey(plan, pkg, undefined, register);
+        qe.evidence_key = key; qe.register = register;
         const prior = body.live === true ? null : await findObservation(store, key).catch((e) => { log(`record lookup failed (streaming live instead): ${(e as Error).message}`); return null; });
         if (prior) {
           qe.observation_id = prior._id; qe.model = prior.data.model; qe.from_record = true;
           send("token", { text: prior.data.answer });
-          send("observation", { id: prior._id, _hash: prior._hash, model: prior.data.model, latency_ms: 0, answer_truncated: false, from_record: true, recorded_at: prior.data.created_at, recorded_latency_ms: prior.data.latency_ms });
+          send("observation", { id: prior._id, _hash: prior._hash, model: prior.data.model, latency_ms: 0, answer_truncated: false, from_record: true, recorded_at: prior.data.created_at, recorded_latency_ms: prior.data.latency_ms, register: prior.data.register ?? "fan" });
           send("done", { latency_ms: Date.now() - started });
           return;
         }
-        for await (const ev of explain(llm, store, question, plan, pkg, { team, season }, log)) {
+        for await (const ev of explain(llm, store, question, plan, pkg, { team, season, register }, log)) {
           if (ev.type === "token") send("token", { text: ev.text });
           else if (ev.type === "observation") { qe.observation_id = ev.observation.id; qe.model = ev.observation.model; qe.answer_truncated = ev.observation.answer_truncated; qe.llm_ms = ev.observation.latency_ms; send("observation", { id: ev.observation.id, _hash: ev.hash, model: ev.observation.model, prompt_version: ev.observation.prompt_version, finish_reason: ev.observation.finish_reason, answer_truncated: ev.observation.answer_truncated, latency_ms: ev.observation.latency_ms, error: ev.observation.error }); }
           else if (ev.type === "error") { qe.llm_error = ev.error; send("token", { text: `\n\n${deterministicFallback(pkg)}` }); send("error", { error: ev.error, recoverable: true }); }
