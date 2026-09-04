@@ -26,10 +26,11 @@ export type Intent =
   | "play_explain"
   | "rating"
   | "rating_compare"
+  | "opponent_report"
   | "unsupported";
 
 export const INTENTS: readonly Intent[] = [
-  "third_down", "tendency", "comparison", "situation_scan", "game_summary", "play_explain", "rating", "rating_compare", "unsupported",
+  "third_down", "tendency", "comparison", "situation_scan", "game_summary", "play_explain", "rating", "rating_compare", "opponent_report", "unsupported",
 ];
 
 export interface QueryPlan {
@@ -58,6 +59,8 @@ export interface PlanContext {
   play_id?: string;
   /** Known team abbreviations for validation. */
   teams: string[];
+  /** The default team's next scheduled opponent, when known (for "this week's opponent"). */
+  next_opponent?: string;
 }
 
 export interface PlanOutcome {
@@ -85,7 +88,7 @@ export async function planQuestion(
     try {
       const res = await complete(cfg, [
         { role: "system", content: PLANNER_SYSTEM },
-        { role: "user", content: `CONTEXT: ${JSON.stringify({ default_team: ctx.default_team, default_season: ctx.default_season, game_id: ctx.game_id ?? null, play_id: ctx.play_id ?? null })}\n\nQUESTION: ${question}${PLANNER_USER_SUFFIX}` },
+        { role: "user", content: `CONTEXT: ${JSON.stringify({ default_team: ctx.default_team, default_season: ctx.default_season, next_opponent: ctx.next_opponent ?? null, game_id: ctx.game_id ?? null, play_id: ctx.play_id ?? null })}\n\nQUESTION: ${question}${PLANNER_USER_SUFFIX}` },
       ], { maxTokens: 600, temperature: 0 });
       raw = res.content;
       model = res.model;
@@ -113,7 +116,13 @@ export async function planQuestion(
   let outcome: PlanOutcome;
   if (proposed) {
     const v = validatePlan(proposed, ctx);
-    if (v.ok) {
+    if (v.ok && v.plan!.intent === "unsupported" && rulePlan(question, ctx)) {
+      // The model gave up but the deterministic router recognizes the question.
+      // Rules win: a concrete, validated plan beats a shrug. Recorded, not hidden.
+      const rb = rulePlan(question, ctx)!;
+      log(`planner: model said unsupported ("${v.plan!.reason}") but rules found ${rb.intent} — using rules`);
+      outcome = { ok: true, plan: { ...rb, latency_ms: Date.now() - started }, errors: [`model proposed unsupported: ${v.plan!.reason ?? ""}`], fallback_used: true };
+    } else if (v.ok) {
       outcome = { ok: true, plan: { ...v.plan!, source: "model", model, raw, latency_ms: Date.now() - started }, errors: [], fallback_used: false };
     } else {
       log(`planner: model plan rejected: ${v.errors.join("; ")} — falling back to rules`);
@@ -212,6 +221,18 @@ export function validatePlan(input: unknown, ctx: PlanContext): { ok: boolean; p
       if (errors.length) return { ok: false, errors };
       return { ok: true, plan: { ...base, filters: { a, b }, a: va.filter, b: vb.filter }, errors: [] };
     }
+    case "opponent_report": {
+      const f = withDefaults(filters);
+      const opponent = typeof f.opponent === "string" ? f.opponent.toUpperCase() : null;
+      if (!opponent) return { ok: false, errors: ["opponent_report needs filters.opponent"] };
+      if (ctx.teams.length && !ctx.teams.includes(opponent)) return { ok: false, errors: [`opponent: ${opponent} is not a known team`] };
+      // side = which unit of the OPPONENT we scout. Default: their offense (what our defense faces).
+      const side = f.side === "defense" ? "defense" : "offense";
+      const v = validateFilter({ team: opponent, season: f.season, side });
+      if (!v.ok) errors.push(...v.errors);
+      if (errors.length) return { ok: false, errors };
+      return { ok: true, plan: { ...base, filters: { ...f, opponent, side }, filter: v.filter }, errors: [] };
+    }
     case "rating_compare": {
       const f = withDefaults(filters);
       if (typeof f.a !== "string" || typeof f.b !== "string") errors.push("filters.a and filters.b must be rating definition ids");
@@ -283,6 +304,13 @@ export function rulePlan(question: string, ctx: PlanContext): Omit<QueryPlan, "l
   };
 
   if (playId && /\bplay\b|what happened|explain/.test(q)) return mk("play_explain", { play_id: playId });
+  if (/opponent|scout|this week|next (game|opponent|week)|know about|facing|matchup|match-up/.test(q)) {
+    // In a scouting question the fan's team is the DEFAULT team; any other
+    // team named in the question is the opponent; otherwise the schedule decides.
+    const mentioned = resolveTeam(question, ctx.teams.filter((t) => t !== ctx.default_team));
+    const opponent = mentioned ?? ctx.next_opponent;
+    if (opponent) return mk("opponent_report", { team: ctx.default_team, opponent, season, side: /their defen[cs]e|against their d/.test(q) ? "defense" : "offense" });
+  }
   if (/why .*(disagree|different)|rating.*(vs|versus|compare)|compare.*rating/.test(q)) return null; // needs explicit ids — UI path
   if (/\brating|rated|grade|score out of\b/.test(q) && /third|3rd/.test(q)) return mk("rating", { team, season });
   if (/\b(compare|vs\.?|versus|than last (season|year)|this (season|year) (vs|versus|against|to) last)\b/.test(q)) {

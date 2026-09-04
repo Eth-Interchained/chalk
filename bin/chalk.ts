@@ -80,7 +80,7 @@ async function main() {
         const r = await ingest({
           store,
           source,
-          scope: { season: num("season"), week: num("week"), team: str("team"), gameId: str("game"), deep: flags.deep === true },
+          scope: { season: num("season"), week: num("week"), team: str("team"), gameId: str("game"), deep: flags.deep === true, contextOnly: flags["context-only"] === true },
           log,
           onProgress: (c) => {
             if (c.games_done % 10 === 0 || c.games_done === c.games_total) {
@@ -98,6 +98,8 @@ async function main() {
             `  source                 ${r.source}`,
             `  games fetched          ${r.games_fetched}`,
             `  plays fetched          ${r.plays_fetched}`,
+            `  context rows fetched   ${r.context_fetched}`,
+            `  context written        ${r.context_written} (skipped ${r.context_skipped})`,
             `  raw records written    ${r.raw_written}`,
             `  duplicates ignored     ${r.raw_duplicates}`,
             `  changed records        ${r.raw_changed}`,
