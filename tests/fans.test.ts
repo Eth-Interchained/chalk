@@ -107,14 +107,16 @@ test("fan writes: chained per fan, caused_by the CHALK record, re-rating replace
   assert.ok(trace.some((t) => t._coll === COLL.ratings && t._id === "rating_test1"));
   assert.ok(trace.some((t) => t._coll === SR.ratings)); // prev link
 
-  // Chain walk verifies link by link. Dad's rating was re-put, so the chain's
-  // middle link (rating v1) is history: the walk reports exactly that.
+  // Chain walk verifies link by link. Dad's rating was re-put, so the chain's first link (rating v1)
+  // is a superseded version: since v0.12.1 the walker resolves it through TRACE history and verifies.
   const chain = await fanChain(store, dad.fan_id);
   assert.equal(chain.handle, dad.handle);
   assert.equal(chain.length, 3);
   assert.equal(chain.links[0].kind, "rating"); // tip = rating v2
   assert.equal(chain.links[1].kind, "post");
-  assert.equal(chain.links[2].ok, false); // rating v1's hash is a prior version -> not current
+  assert.equal(chain.links[2].kind, "rating"); // rating v1, resolved from history
+  assert.equal(chain.links[2].ok, true);
+  assert.equal(chain.verified, true);
   const sChain = await fanChain(store, sarah.fan_id);
   assert.equal(sChain.verified, true);
   assert.equal(sChain.links.length, 2);
@@ -169,9 +171,11 @@ test("fan knobs on the chain: favorite replaces, pick settles against the game r
   await hype(store, who, { team: "TB", season: 2025, week: 9, value: 5 }); await hype(store, who2, { team: "TB", season: 2025, week: 9, value: 2 });
   const hr = await hype(store, who, { team: "TB", season: 2025, week: 9, value: 4 }); assert.equal(hr.replaced, true);
   const agg = await hypeFor(store, "TB", 2025, 9); assert.equal(agg.n, 2); assert.equal(agg.mean, 3); assert.equal(agg.label, "steady");
-  // Known walker limit (since v0.4.0): a replaced write's prev cites the superseded version's hash, which the
-  // current-version index cannot resolve, so `verified` is false after any replace. Length is exact.
+  // v0.12.1: replaced writes resolve through TRACE history — the chain verifies end to end.
   const chain = await fanChain(store, fid); assert.equal(chain.length, 6, "favorite x2, pick x2, hype x2");
+  assert.equal(chain.verified, true, `chain must verify across replaced writes: ${JSON.stringify(chain.links.map((l) => [l.kind, l.ok, l.chain_index]))}`);
+  assert.deepEqual(chain.links.map((l) => l.chain_index), [6, 5, 4, 3, 2, 1]);
+  assert.ok(chain.links.every((l) => l.ok));
   const fd = await feed(store, { team: "TB", include: ["pick"] }); assert.ok(fd.items.every((i) => i.kind === "pick") && fd.items.length >= 2, "picks on either side of a TB game show on the TB page");
   const rc = await reactionCounts(store, "sr_posts", ["nope"]); assert.equal(rc.size, 0);
 });

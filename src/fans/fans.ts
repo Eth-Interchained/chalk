@@ -473,6 +473,19 @@ export async function fanChain(store: Store, fan_id: string, limit = 200): Promi
   for (const coll of [SR.posts, SR.ratings, SR.reactions, SR.favorites, SR.picks, SR.hype]) {
     for (const r of await store.query<FanWrite>(`FROM ${coll} WHERE fan_id = ${nqlStr(fan_id)}`)) byHash.set(r._hash, r);
   }
+  // Replaced writes (re-pick, changed favorite, re-rate) keep their id and get a new hash; the
+  // superseded version is still in the DAG. When a prev cites a hash the current index lacks, pull
+  // each current doc's TRACE once (prior versions of the same id are part of the answer) and index
+  // those too. Lazy: fans who never replaced anything pay nothing extra. (v0.12.1)
+  let historyLoaded = false;
+  const loadHistory = async () => {
+    if (historyLoaded) return; historyLoaded = true;
+    for (const row of [...byHash.values()]) {
+      try {
+        for (const v of await store.trace(row._coll, row._id)) { const d = v.data as Partial<FanWrite>; if (d.fan_id === fan_id && !byHash.has(v._hash)) byHash.set(v._hash, v as unknown as NedbRow<FanWrite>); }
+      } catch (e) { /* named below: a missing history leaves the link unresolved and verified=false */ void e; }
+    }
+  };
   const links: ChainLink[] = [];
   let cur: string | null = tip.data.tip_hash;
   let verified = true;
@@ -480,10 +493,9 @@ export async function fanChain(store: Store, fan_id: string, limit = 200): Promi
   while (cur && links.length < limit) {
     if (seen.has(cur)) { verified = false; break; }
     seen.add(cur);
-    const row = byHash.get(cur);
+    let row = byHash.get(cur);
+    if (!row) { await loadHistory(); row = byHash.get(cur); }
     if (!row) {
-      // The current version of a re-rated doc has a new hash; the old hash is history.
-      // Fetch it via TRACE from any row that cites it is expensive; mark and stop.
       links.push({ coll: "?", id: "?", hash: cur, prev: null, chain_index: -1, created_at: "", kind: "unknown", ok: false });
       verified = false;
       break;
