@@ -359,8 +359,9 @@ function renderRating(h) {
   $("#rc-line1").textContent = `${s.definition} · ${s.sample_size} third downs · ${s.normalization}`;
   $("#rc-components").innerHTML = s.components.map((c) => `<div class="comp"><div class="k">${esc(c.metric.replace(/_/g, " "))} · ${c.weight_pct}%</div><div class="v">${c.raw_unit === "%" ? fmtPct(c.raw) : fmtNum(c.raw, 3)}</div><div class="p">${c.percentile === null ? "—" : `${c.percentile}th pct`} · #${c.rank ?? "—"} · +${fmtNum(c.points, 1)} pts</div><div class="bar"><i style="width:${c.percentile ?? 0}%"></i></div></div>`).join("");
 }
-function renderTrend(t) {
+function renderTrend(t, subject = "third_down") {
   const svg = $("#trend-svg"); const sub = $("#trend-sub"); const head = $("#trend-headline");
+  const unit = headlineUnit(subject);
   if (!t || !t.points.length) { head.textContent = "No trend yet."; return; }
   const pts = t.points; const W = 320, H = 96, padL = 8, padR = 26, padT = 14, padB = 16;
   const xs = pts.map((_, i) => padL + (i * (W - padL - padR)) / Math.max(1, pts.length - 1));
@@ -370,27 +371,36 @@ function renderTrend(t) {
   const last = pts[pts.length - 1];
   svg.innerHTML = `<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".35"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
     <path class="area" d="${area}"/><path class="line" d="${line}"/>
-    ${pts.map((p, i) => `<circle class="dot ${p.provisional ? "prov" : ""}" cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="3"><title>Week ${p.week}: ${p.score}/100 · rank ${p.rank} · ${p.attempts} third downs${p.provisional ? " (provisional)" : ""}</title></circle>`).join("")}
+    ${pts.map((p, i) => `<circle class="dot ${p.provisional ? "prov" : ""}" cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="3"><title>Week ${p.week}: ${p.score}/100 · rank ${p.rank} · ${p.attempts} ${unit}${p.provisional ? " (provisional)" : ""}</title></circle>`).join("")}
     ${pts.filter((_, i) => i % Math.ceil(pts.length / 6) === 0 || i === pts.length - 1).map((p) => `<text class="lbl" x="${xs[pts.indexOf(p)].toFixed(1)}" y="${H - 3}" text-anchor="middle">W${p.week}</text>`).join("")}
     <text class="val" x="${(xs[xs.length - 1] + 5).toFixed(1)}" y="${(ys[ys.length - 1] + 4).toFixed(1)}">${last.score}</text>`;
-  sub.textContent = `wk ${pts[0].week}–${last.week} · as known then`;
+  sub.textContent = `${headlineLabel(subject).toLowerCase()} · wk ${pts[0].week}–${last.week} · as known then`;
   head.textContent = t.headline;
+}
+// Trend follows the headline (v0.10.1): one loader for both the chips and the hero picker. Third down uses
+// the trend already in the Home payload (it follows the Home formula); other subjects fetch the per-subject
+// trend, with the active formula when one was applied via Rate differently.
+let trendKey = "";
+async function showTrendFor(subject, defId) {
+  const key = `${state.team}|${state.season}|${subject}|${defId ?? ""}`;
+  trendKey = key;
+  document.querySelectorAll("#trend-chips .chip").forEach((x) => x.classList.toggle("on", x.dataset.subject === subject));
+  if (subject === "third_down") { renderTrend(state.home?.trend, subject); return; }
+  $("#trend-headline").textContent = "…";
+  try {
+    const t = await api(`/api/v1/ratings/${subjectPath(subject)}/trend?team=${state.team}&season=${state.season}${defId ? `&definition=${encodeURIComponent(defId)}` : ""}`);
+    if (trendKey !== key) return;
+    renderTrend({ points: t.points.map((p) => ({ ...p, attempts: p.sample })), headline: t.headline }, subject);
+  } catch (e) { if (trendKey === key) $("#trend-headline").innerHTML = `<span class="err">trend unavailable: ${esc(e.message)}</span>`; }
 }
 function renderTrendChips(ratings) {
   const box = $("#trend-chips"); box.innerHTML = "";
   for (const r of ratings) {
-    const b = el(`<button class="chip ${r.subject === "third_down" ? "on" : ""}">${esc(r.label)}</button>`);
-    b.onclick = async () => {
-      box.querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); b.classList.add("on");
-      $("#trend-headline").textContent = "…";
-      try {
-        if (r.subject === "third_down") { renderTrend(state.home.trend); return; }
-        const t = await api(`/api/v1/ratings/${r.subject.replace("_", "-")}/trend?team=${state.team}&season=${state.season}`);
-        renderTrend({ points: t.points.map((p) => ({ ...p, attempts: p.sample })), headline: t.headline });
-      } catch (e) { $("#trend-headline").textContent = e.message; }
-    };
+    const b = el(`<button class="chip ${r.subject === state.headline ? "on" : ""}" data-subject="${esc(r.subject)}">${esc(r.label)}</button>`);
+    b.onclick = () => showTrendFor(r.subject);
     box.append(b);
   }
+  if (state.headline && state.headline !== "third_down") showTrendFor(state.headline);
 }
 async function loadGames() {
   const body = $("#games-body"); const sub = $("#games-sub");
@@ -467,7 +477,7 @@ function setHeadline(sj, opts = {}) {
   renderHeadlinePicker();
   document.querySelectorAll("#ratings .rt").forEach((c) => c.classList.toggle("headline", c.dataset.subject === sj));
   if (!opts.silent) { syncUrl(); tele("headline"); }
-  if (state.home) renderHeadline(state.home);
+  if (state.home) { renderHeadline(state.home); showTrendFor(sj); }
 }
 // Paint the hero ring for the active headline. Third down keeps the full Home rating (trend, components
 // from the snapshot); other subjects paint from ratings[] immediately and pull components after.
@@ -767,6 +777,7 @@ async function rateDifferently() {
     const full = await api(`/api/v1/ratings/${subjectPath(sj)}?team=${state.team}&season=${state.season}&definition=${encodeURIComponent(defId)}`);
     const snap = full.snapshot;
     renderHeadline(state.home, { subject: sj, score: snap.score, rank: full.rank, of: full.population, provisional: snap.provisional, sample: snap.sample_size, definition_id: snap.definition_id, definition_name: snap.definition_name ?? full.definition?.name ?? defId, snapshot_id: snap.id, components: snap.components });
+    showTrendFor(sj, defId);
   };
   const sel = el(`<div class="suggest" style="padding:6px 0"></div>`);
   const showCompare = async (a, b, anchor) => { const c = await api(`/api/v1/ratings/compare?team=${state.team}&season=${state.season}&a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`); const out = el(`<div></div>`); out.append(el(`<div class="h">${esc(c.a.summary.definition)} ${c.a.summary.score} → ${esc(c.b.summary.definition)} ${c.b.summary.score} (Δ ${c.disagreement.delta})</div><div class="statement">${esc(c.disagreement.headline)}</div>`)); for (const l of c.disagreement.lines.slice(0, 4)) out.append(el(`<div class="statement">${esc(l.sentence)}</div>`)); anchor.after(out); };

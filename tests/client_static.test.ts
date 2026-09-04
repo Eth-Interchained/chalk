@@ -136,3 +136,15 @@ test("headline rating is switchable by subject (v0.10.0): picker markup, URL par
   assert.ok(server.includes('definitionSubjectMismatch(def, "third_down")'), "Home refuses a non-third-down definition");
   assert.match(server, /ratings\\\/\(offense\|defense\|red-zone\|red_zone\|explosiveness\|ball-security\|ball_security\)\\\/league\$/, "subject league route exists");
 });
+
+test("trend follows the headline (v0.10.1): one loader for chips and picker; applied formulas carry into the trend", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  assert.ok(js.includes("async function showTrendFor(subject, defId)"));
+  assert.match(js, /if \(state\.home\) \{ renderHeadline\(state\.home\); showTrendFor\(sj\); \}/, "setHeadline drives the trend");
+  assert.ok(js.includes("showTrendFor(sj, defId);"), "Rate differently on a non-third-down subject re-trends with that formula");
+  assert.ok(js.includes("/trend?team=${state.team}&season=${state.season}${defId ? `&definition=${encodeURIComponent(defId)}` : \"\"}"), "per-subject trend route with optional definition");
+  assert.ok(!js.includes("third downs${p.provisional"), "tooltip unit follows the subject, not hard-coded third downs");
+  const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
+  const trendRoute = server.slice(server.indexOf("\\/trend$/)) && m === \"GET\") {"), server.indexOf("subjectTrend(lp.rows"));
+  assert.ok(trendRoute.includes("definitionSubjectMismatch(def, subject"), "per-subject trend route refuses a definition of another subject");
+});

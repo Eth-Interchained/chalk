@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.10.1 · the trend follows the headline
+
+- **Mark:** "cut the next slice" — the one left on the table in v0.10.0.
+- Switching the headline (picker or tile) now switches the Rating trend chart to that subject; the trend chips and the picker share one loader (`showTrendFor(subject, defId)`), so they can never disagree. Third down keeps the trend from the Home payload (it follows the Home formula); other subjects fetch `/api/v1/ratings/{subject}/trend`, and a formula applied via Rate differently carries into the trend (`?definition=`). Tooltip and sub-line name the subject and its unit (third downs · plays · plays faced · red-zone plays) instead of hard-coded "third downs". Stale responses are dropped by key; failures are named in the trend footer.
+- Found while verifying: `/ratings/{subject}/trend?definition=` had no subject guard — a third-down formula trended over offense profiles returned 200. Same footgun class as v0.10.0; closed (400).
+- Tests: static guard incl. the trend-route refusal. 93/93 both stores. Live on the local store: see PR.
+
 ## 2026-09-04 — v0.10.0 · the headline rating is switchable
 
 - **Mark:** "are we able to switch between these modes? … is the 3rd down default but these other categories are silently being left on the server hidden behind the server? because these ratings are probably awesome for the UI" → "1,2,3".
