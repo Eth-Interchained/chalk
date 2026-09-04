@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.8 · on nedb-engine 2.8.5 — acknowledged writes survive SIGKILL
+
+- **The engine fix, not a CHALK workaround** (Mark: "fix the engine not CHALK"). nedb-engine **2.8.5** — embedded `NedbCore.open()` now runs the 1 s manifest ticker exactly as `nedbd` does, and the Node exit-flush wrapper ships and works for the first time (it had never been in the published package, and could not have wrapped a non-writable static). Found by this app; fixed upstream in eth-interchained/nedb PR #72; CI's smoke gate now runs a durability test (SIGKILL keeps the write · ticker-off SIGKILL loses it · ticker-off SIGTERM keeps it).
+- CHALK pins `nedb-engine` **2.8.5** (exact — the durability contract is part of what we depend on). Published package verified: four `.node` binaries, `native.js` + wrapper (`NedbCore.__exitFlushWrapped === true`).
+- **Proof against the published build, through CHALK's own `serve`:** fan write acknowledged → `kill -9` three seconds later → restart → **FOUND**. Same sequence on 2.8.4 → GONE. Contract now: an acknowledged write is on disk within one second, or at exit.
+- Nothing else changed. 108/108 both stores. On the VPS: `git pull && npm install && restart` — the banner's `engine` line must read `nedb-engine 2.8.5`.
+
 ## 2026-09-04 — v0.12.7 · your own pick was invisible to you for a whole cache TTL
 
 - **Mark (MIA):** "Who you got … neither is selectable … the server logs the click events but its not persisted on the client … 5 minutes later it just works."
