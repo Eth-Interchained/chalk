@@ -285,3 +285,14 @@ export function validateDefinition(input: unknown, now = new Date().toISOString(
   if (typeof o.derived_from === "string") def.derived_from = o.derived_from;
   return { ok: true, definition: def, errors: [] };
 }
+
+/** Why a definition cannot rate this subject — null when it can. A third-down formula scored over all
+ *  plays (or an offense formula over third downs only) is a plausible-looking wrong number; refuse it. */
+export function definitionSubjectMismatch(def: Pick<RatingDefinition, "id" | "subject">, subject: RatingSubject): string | null {
+  return def.subject === subject ? null : `definition ${def.id} rates ${def.subject}, not ${subject}`;
+}
+export function filterDefinitionsBySubject<T extends Pick<RatingDefinition, "subject">>(defs: readonly T[], subject: string | null | undefined): T[] {
+  if (!subject) return [...defs];
+  return defs.filter((d) => d.subject === subject);
+}
+export const SUBJECT_LABELS: Record<RatingSubject, string> = Object.fromEntries(CARD_SUBJECTS.map((c) => [c.subject, c.label])) as Record<RatingSubject, string>;

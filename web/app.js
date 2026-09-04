@@ -86,6 +86,8 @@ async function boot() {
   const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("mode-coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); $("#coach-deck").hidden = !state.coach; if (state.coach) loadCoachDeck(); };
   mode.onclick = () => { state.coach = !state.coach; syncUrl(); applyMode(); };
   state.view = url.searchParams.get("view") === "feed" ? "feed" : "home";
+  state.headline = HEADLINES.some((h) => h[0] === url.searchParams.get("headline")) ? url.searchParams.get("headline") : "third_down";
+  renderHeadlinePicker();
   document.querySelectorAll(".view-tab").forEach((b) => { b.onclick = () => setView(b.dataset.view); });
   $("#feed-refresh").onclick = () => pollFeed(true);
   setView(state.view, { silent: true });
@@ -99,7 +101,7 @@ async function boot() {
   $("#show-league").onclick = showLeague;
   const q0 = url.searchParams.get("q"); if (q0) ask(q0);
 }
-function syncUrl() { const u = new URL(location.href); u.searchParams.set("team", state.team); u.searchParams.set("season", state.season); u.searchParams.set("mode", state.coach ? "coach" : "fan"); u.searchParams.set("view", state.view); history.replaceState(null, "", u); }
+function syncUrl() { const u = new URL(location.href); u.searchParams.set("team", state.team); u.searchParams.set("season", state.season); u.searchParams.set("mode", state.coach ? "coach" : "fan"); u.searchParams.set("view", state.view); if (state.headline && state.headline !== "third_down") u.searchParams.set("headline", state.headline); else u.searchParams.delete("headline"); history.replaceState(null, "", u); }
 function renderSuggest() { const s = $("#suggest"); s.innerHTML = ""; for (const q of state.meta.suggested_questions) s.append(el(`<button class="chip" data-ask="${esc(q)}">${esc(q.replaceAll("Tampa", teamName(state.team)))}</button>`)); }
 
 // ------------------------------------------------------------------ home
@@ -328,7 +330,7 @@ async function loadHome(defId) {
     $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
     // Served from a snapshot built before the latest data change: show it, then re-pull once the background rebuild lands.
     if (h.served?.refreshing) { $("#rc-rank").insertAdjacentHTML("beforeend", ' <span class="badge amber" id="refreshing" title="data changed since this was computed; refreshing">refreshing…</span>'); homeRefreshAttempts = (homeRefreshAttempts ?? 0) + 1; if (homeRefreshAttempts <= 8) setTimeout(() => { if (state.team === h.team && state.season === h.season) loadHome(defId); }, 4000); } else homeRefreshAttempts = 0;
-    renderRating(h);
+    renderHeadline(h);
     renderTrend(h.trend);
     renderForm(h.form);
     renderLast(h.last_game);
@@ -448,12 +450,56 @@ function renderWeak(h) {
   for (const s of h.strongest.slice(0, 1)) b.append(el(`<div class="weak-row" data-ask="What does Tampa do in this situation: ${esc(s.situation)}"><div>${esc(s.situation)}<div class="n">${s.snaps} snaps · strongest</div></div><div class="epa good">${signed(s.epa_vs_team, 2)} EPA</div></div>`));
 }
 const SUBJECT_Q = { offense: "How is the Tampa offense rated overall?", defense: "Grade the Tampa defense", third_down: "How does Tampa's third-down rating break down?", red_zone: "What is Tampa's red zone rating?", explosiveness: "How explosive is Tampa's offense rated?", ball_security: "What is Tampa's ball security rating?" };
+// Headline rating (v0.10.0): the hero ring shows one subject; default third down. Every subject's default
+// rating is already in the Home payload (ratings[]), so switching is a re-render, not a rebuild; the
+// components table for a non-third-down subject is one cheap fetch. URL: ?headline=offense.
+const HEADLINES = [["third_down", "Third Down", "third downs"], ["offense", "Offense", "plays"], ["defense", "Defense", "plays faced"], ["red_zone", "Red Zone", "red-zone plays"], ["explosiveness", "Explosiveness", "plays"], ["ball_security", "Ball Security", "plays"]];
+const headlineLabel = (sj) => (HEADLINES.find((h) => h[0] === sj) || HEADLINES[0])[1];
+const headlineUnit = (sj) => (HEADLINES.find((h) => h[0] === sj) || HEADLINES[0])[2];
+const subjectPath = (sj) => sj.replace("_", "-");
+function renderHeadlinePicker() {
+  const box = $("#headline-pick"); box.innerHTML = "";
+  for (const [sj, label] of HEADLINES) { const b = el(`<button class="hp ${state.headline === sj ? "on" : ""}" role="tab" aria-selected="${state.headline === sj}" data-headline="${sj}">${esc(label)}</button>`); b.onclick = () => setHeadline(sj); box.append(b); }
+}
+function setHeadline(sj, opts = {}) {
+  if (!HEADLINES.some((h) => h[0] === sj)) sj = "third_down";
+  state.headline = sj; state.headlineDef = null;
+  renderHeadlinePicker();
+  document.querySelectorAll("#ratings .rt").forEach((c) => c.classList.toggle("headline", c.dataset.subject === sj));
+  if (!opts.silent) { syncUrl(); tele("headline"); }
+  if (state.home) renderHeadline(state.home);
+}
+// Paint the hero ring for the active headline. Third down keeps the full Home rating (trend, components
+// from the snapshot); other subjects paint from ratings[] immediately and pull components after.
+async function renderHeadline(h, override) {
+  const sj = state.headline || "third_down";
+  $("#rc-label").textContent = `${headlineLabel(sj)} Rating`;
+  $("#rc-why").dataset.ask = SUBJECT_Q[sj] || `How is Tampa rated on ${headlineLabel(sj).toLowerCase()}?`;
+  if (sj === "third_down" && !override) { renderRating(h); return; }
+  const r = override || (h.ratings || []).find((x) => x.subject === sj);
+  if (!r) { $("#rc-score").textContent = "–"; $("#rc-rank").textContent = `no ${headlineLabel(sj).toLowerCase()} rating for ${state.season}`; $("#rc-line1").textContent = ""; $("#rc-components").innerHTML = ""; return; }
+  const score = r.score ?? 0;
+  $("#rc-score").innerHTML = `${r.score ?? "–"}<small>/100</small>`;
+  $("#ring-fg").style.strokeDashoffset = 326.7 * (1 - score / 100);
+  $("#rc-rank").innerHTML = `<b>#${r.rank}</b> of ${r.of}${r.provisional ? ' <span class="badge amber">provisional</span>' : ""}`;
+  $("#rc-line1").textContent = `${r.definition_name} · ${r.sample} ${headlineUnit(sj)} · percentile_rank@1.0.0`;
+  state.rating = { summary: { definition_id: r.definition_id, score: r.score, rank: r.rank, of: r.of }, snapshot: { definition_id: r.definition_id, id: r.snapshot_id } };
+  $("#rc-components").innerHTML = `<div class="muted">components…</div>`;
+  try {
+    const full = r.components ? r : await api(`/api/v1/ratings/${subjectPath(sj)}?team=${state.team}&season=${state.season}&definition=${encodeURIComponent(r.definition_id)}`);
+    if (state.headline !== sj) return;
+    const comps = full.components || full.snapshot?.components || [];
+    $("#rc-components").innerHTML = comps.map((c) => `<div class="comp"><div class="k">${esc(c.label ?? c.metric)} · ${Math.round((c.weight ?? 0) * 100)}%</div><div class="v">${String(c.metric).includes("rate") ? fmtPct(c.raw === null ? null : Math.round(c.raw * 1000) / 10) : fmtNum(c.raw, 3)}</div><div class="p">${c.normalized === null || c.normalized === undefined ? "—" : `${Math.round(c.normalized * 100)}th pct`}</div></div>`).join("");
+  } catch (e) { $("#rc-components").innerHTML = `<div class="err">components unavailable: ${esc(e.message)}</div>`; }
+}
 function renderRatings(list) {
   const box = $("#ratings"); box.innerHTML = "";
   for (const r of list) {
     const card = el(`<div class="rt ${r.provisional ? "prov" : ""}" data-subject="${esc(r.subject)}" title="${esc(r.definition_name)} · ${r.sample} sample"><div class="k">${esc(r.label)}</div><div class="v">${r.score ?? "–"}<small>/100</small></div><div class="r">#${r.rank} of ${r.of}${r.top_component ? ` · ${esc(r.top_component.label.toLowerCase())} ${r.top_component.percentile}th` : ""}${r.provisional ? " · provisional" : ""}</div><div class="rx" style="margin-top:6px;display:flex;gap:4px"><button class="chip" data-why style="padding:4px 8px;font-size:12px">Why?</button><button class="chip" data-rate style="padding:4px 8px;font-size:12px">Rate it</button></div><div class="bar"><i style="width:${r.score ?? 0}%"></i></div></div>`);
     card.querySelector("[data-why]").onclick = () => ask((SUBJECT_Q[r.subject] || `How is Tampa rated on ${r.label.toLowerCase()}?`).replaceAll("Tampa", teamName(state.team)));
     card.querySelector("[data-rate]").onclick = () => rateTile(r);
+    card.classList.toggle("headline", r.subject === state.headline);
+    card.onclick = (e) => { if (e.target.closest("button")) return; setHeadline(r.subject); $("#rating-card").scrollIntoView({ behavior: "smooth", block: "center" }); };
     box.append(card);
   }
   loadConsensus();
@@ -710,36 +756,54 @@ function renderCoach(d) {
 
 // -------------------------------------------------------- rate differently
 async function rateDifferently() {
-  const card = el(`<article class="card"><header class="card-head"><div class="q">Rate differently</div></header><div class="muted">Pick a saved formula or build your own. Weights are normalized; every score exposes its formula.</div><div class="drawer"></div></article>`);
+  const sj = state.headline || "third_down";
+  const card = el(`<article class="card"><header class="card-head"><div class="q">Rate ${esc(headlineLabel(sj).toLowerCase())} differently</div></header><div class="muted">Pick a saved ${esc(headlineLabel(sj).toLowerCase())} formula or build your own. Only formulas for this subject are offered — an offense formula scored over third downs would be a plausible-looking wrong number. Weights are normalized; every score exposes its formula.</div><div class="drawer"></div></article>`);
   showCard(card);
   const drawer = $(".drawer", card);
-  const defs = await api("/api/v1/rating-definitions");
+  const defs = await api(`/api/v1/rating-definitions?subject=${sj}`);
+  // Apply a formula to the headline: third down rebuilds Home (trend follows the formula); other subjects re-rate in place.
+  const applyDef = async (defId) => {
+    if (sj === "third_down") { loadHome(defId); return; }
+    const full = await api(`/api/v1/ratings/${subjectPath(sj)}?team=${state.team}&season=${state.season}&definition=${encodeURIComponent(defId)}`);
+    const snap = full.snapshot;
+    renderHeadline(state.home, { subject: sj, score: snap.score, rank: full.rank, of: full.population, provisional: snap.provisional, sample: snap.sample_size, definition_id: snap.definition_id, definition_name: snap.definition_name ?? full.definition?.name ?? defId, snapshot_id: snap.id, components: snap.components });
+  };
   const sel = el(`<div class="suggest" style="padding:6px 0"></div>`);
   const showCompare = async (a, b, anchor) => { const c = await api(`/api/v1/ratings/compare?team=${state.team}&season=${state.season}&a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`); const out = el(`<div></div>`); out.append(el(`<div class="h">${esc(c.a.summary.definition)} ${c.a.summary.score} → ${esc(c.b.summary.definition)} ${c.b.summary.score} (Δ ${c.disagreement.delta})</div><div class="statement">${esc(c.disagreement.headline)}</div>`)); for (const l of c.disagreement.lines.slice(0, 4)) out.append(el(`<div class="statement">${esc(l.sentence)}</div>`)); anchor.after(out); };
   for (const d of defs.definitions) {
     const b = el(`<button class="chip ${d.id === state.rating?.snapshot?.definition_id ? "on" : ""}">${esc(d.name)} v${esc(d.version)}</button>`);
-    b.onclick = async () => { const cur = state.rating?.snapshot?.definition_id; if (cur && cur !== d.id) await showCompare(cur, d.id, sel); loadHome(d.id); sel.querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); b.classList.add("on"); };
+    b.onclick = async () => { try { const cur = state.rating?.snapshot?.definition_id; if (sj === "third_down" && cur && cur !== d.id) await showCompare(cur, d.id, sel); await applyDef(d.id); sel.querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); b.classList.add("on"); } catch (err) { sel.after(el(`<div class="err">${esc(err.message)}</div>`)); } };
     sel.append(b);
   }
   drawer.append(sel);
-  const metrics = Object.entries(defs.rateable_metrics);
+  const metrics = Object.entries(defs.rateable_metrics).filter(([, m]) => !m.subjects || m.subjects.includes(sj));
   const form = el(`<form class="rd"><div class="h">Build your own</div><input name="name" placeholder="Name it (e.g. Dad Rating)" required maxlength="80" />${metrics.map(([k, m]) => `<div class="row"><label>${esc(m.label)} <span class="muted">(${m.default_direction === "lower_is_better" ? "lower is better" : "higher is better"})</span></label><input name="w_${k}" type="number" min="0" step="5" placeholder="0" /></div>`).join("")}<button class="chip go" type="submit">Save & rate</button><div class="err out"></div></form>`);
   form.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
     const components = metrics.map(([k]) => ({ metric: k, weight: Number(fd.get(`w_${k}`) || 0) })).filter((c) => c.weight > 0);
-    try { const r = await api("/api/v1/rating-definitions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name"), components, author: "fan" }) }); $(".out", form).textContent = ""; const cur = state.rating?.snapshot?.definition_id; if (cur) await showCompare(cur, r.definition.id, form); loadHome(r.definition.id); }
+    try { const r = await api("/api/v1/rating-definitions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name"), subject: sj, components, author: "fan" }) }); $(".out", form).textContent = ""; const cur = state.rating?.snapshot?.definition_id; if (sj === "third_down" && cur) await showCompare(cur, r.definition.id, form); await applyDef(r.definition.id); }
     catch (err) { $(".out", form).textContent = `${err.message}${err.detail ? ` — ${JSON.stringify(err.detail)}` : ""}`; }
   };
   drawer.append(form);
 }
 
 async function showLeague() {
-  const card = el(`<article class="card"><header class="card-head"><div class="q">Third Down · League</div></header><div class="drawer"><div class="muted">loading…</div></div></article>`);
+  const sj = state.headline || "third_down";
+  const card = el(`<article class="card"><header class="card-head"><div class="q">${esc(headlineLabel(sj))} · League</div></header><div class="drawer"><div class="muted">loading…</div></div></article>`);
   showCard(card);
   const drawer = $(".drawer", card);
   try {
     const def = state.rating?.snapshot?.definition_id;
+    if (sj !== "third_down") {
+      const l = await api(`/api/v1/ratings/${subjectPath(sj)}/league?season=${state.season}${def ? `&definition=${encodeURIComponent(def)}` : ""}`);
+      drawer.innerHTML = `<div class="muted">${esc(l.definition.name)} v${esc(l.definition.version)} · ${l.population} teams${l.through_week ? ` · through week ${l.through_week}` : ""} · seq ${l.seq}</div>`;
+      const t = el(`<div class="tbl"><table><thead><tr><th class="num">#</th><th>team</th><th class="num">score</th><th class="num">n</th><th class="num">Δ wk</th></tr></thead><tbody></tbody></table></div>`);
+      const tb = $("tbody", t);
+      for (const r of l.table) { const tr = el(`<tr style="${r.team === state.team ? "color:var(--accent)" : ""}"><td class="num">${r.rank}</td><td>${esc(r.team)}</td><td class="num">${r.score ?? "—"}${r.provisional ? "*" : ""}</td><td class="num">${r.sample}</td><td class="num">${r.movement === null || r.movement === undefined ? "—" : signed(r.movement, 0)}</td></tr>`); tr.style.cursor = "pointer"; tr.onclick = () => { state.team = r.team; $("#team").value = r.team; syncUrl(); loadHome(); renderSuggest(); window.scrollTo({ top: 0, behavior: "smooth" }); }; tb.append(tr); }
+      drawer.append(t);
+      return;
+    }
     const l = await api(`/api/v1/ratings/third-down/league?season=${state.season}${def ? `&definition=${encodeURIComponent(def)}` : ""}`);
     drawer.innerHTML = `<div class="muted">${esc(l.definition.name)} v${esc(l.definition.version)} · ${l.population} teams · seq ${l.seq}</div>`;
     const t = el(`<div class="tbl"><table><thead><tr><th class="num">#</th><th>team</th><th class="num">score</th><th class="num">n</th><th class="num">conv%</th><th class="num">epa/p</th><th class="num">succ%</th></tr></thead><tbody></tbody></table></div>`);

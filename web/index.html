@@ -63,11 +63,12 @@
       <div class="hero-rating" id="rating-card">
         <div class="ring" id="ring"><svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="52"/></svg><div class="ring-num" id="rc-score">–</div></div>
         <div class="hero-rating-meta">
-          <div class="rc-label">Third Down Rating</div>
+          <div class="headline-pick" id="headline-pick" role="tablist" aria-label="Headline rating"></div>
+          <div class="rc-label" id="rc-label">Third Down Rating</div>
           <div class="rc-rank" id="rc-rank"></div>
           <div class="rc-def" id="rc-line1"></div>
           <div class="rc-actions">
-            <button class="chip" data-ask="How does Tampa's third-down rating break down?">Why?</button>
+            <button class="chip" id="rc-why" data-ask="How does Tampa's third-down rating break down?">Why?</button>
             <button class="chip" id="rate-differently">Rate differently</button>
             <button class="chip" id="show-league">League</button>
           </div>

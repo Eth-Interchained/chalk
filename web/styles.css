@@ -394,3 +394,13 @@ main.view-feed .team-hero { display: none; }
 .mode-coach .prose { font-size: 14px; color: var(--fg-2); }
 .mode-coach .team-hero { height: 30vh; margin-bottom: calc(-15vh + 10px); }
 .mode-coach .hero-abbr { font-size: clamp(36px, 8vw, 48px); }
+
+/* Headline rating picker (v0.10.0): the hero ring is switchable by subject. Chips sit above the label;
+   the active one carries the accent. Tiles below also switch it (click the tile body). */
+.headline-pick { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.headline-pick .hp { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; font-size: 10.5px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg-3); cursor: pointer; }
+.headline-pick .hp:hover { color: var(--fg); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.headline-pick .hp.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.rt { cursor: pointer; }
+.rt.headline { outline: 1px solid var(--accent); outline-offset: -1px; }
+.rt.headline .k::after { content: " · headline"; color: var(--accent); letter-spacing: 0; text-transform: none; font-weight: 500; }

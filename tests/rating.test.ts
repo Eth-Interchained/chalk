@@ -10,6 +10,7 @@ import { computeRating, explainDisagreement, median, type PopulationMember } fro
 import { THIRD_DOWN_DEFAULT_V1, THIRD_DOWN_EXPLOSIVE_V1, validateDefinition } from "../src/rating/definitions.ts";
 import { computeMetrics } from "../src/engine/metrics.ts";
 import { fixtureRows } from "./fixture.ts";
+import { definitionSubjectMismatch, filterDefinitionsBySubject, BUILTIN_DEFINITIONS, OFFENSE_DEFAULT_V1, SUBJECT_LABELS } from "../src/rating/definitions.ts";
 
 test("percentile rank: strict-below plus half ties, bounded, empty -> null", () => {
   assert.equal(percentileRank(5, [1, 2, 3, 4, 5]), 0.9);
@@ -131,4 +132,15 @@ test("rating over the real fixture: two-team population, TB better on every comp
   assert.equal(r.score, 75); // better than CAR on every component: percentile 0.75 each
   assert.equal(r.provisional, true);
   assert.equal(r.sample_size, 15);
+});
+
+test("definitionSubjectMismatch / filterDefinitionsBySubject: an offense formula is never offered for, or scored as, the third-down headline (v0.10.0)", () => {
+  assert.equal(definitionSubjectMismatch(THIRD_DOWN_DEFAULT_V1, "third_down"), null);
+  assert.match(definitionSubjectMismatch(OFFENSE_DEFAULT_V1, "third_down")!, /rates offense, not third_down/);
+  assert.match(definitionSubjectMismatch(THIRD_DOWN_DEFAULT_V1, "offense")!, /rates third_down, not offense/);
+  const td = filterDefinitionsBySubject(BUILTIN_DEFINITIONS, "third_down");
+  assert.ok(td.length >= 2 && td.every((d) => d.subject === "third_down"));
+  assert.deepEqual(filterDefinitionsBySubject(BUILTIN_DEFINITIONS, "offense").map((d) => d.id), [OFFENSE_DEFAULT_V1.id]);
+  assert.equal(filterDefinitionsBySubject(BUILTIN_DEFINITIONS, null).length, BUILTIN_DEFINITIONS.length);
+  assert.equal(SUBJECT_LABELS.third_down, "Third Down"); assert.equal(SUBJECT_LABELS.ball_security, "Ball Security");
 });
