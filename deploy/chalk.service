@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 Interchained LLC. All rights reserved.
 # /etc/systemd/system/chalk.service — CHALK API + Sports-Rater client with NEDB
 # EMBEDDED in-process (no daemon). The watch loop (re-ingest + pulse) runs inside
 # this process when CHALK_WATCH_SEASON is set. One engine per data dir: nothing

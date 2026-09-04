@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * EmbeddedStore — NEDB in-process via the napi NedbCore (nedb-engine), no
  * daemon. Same Store surface as the HTTP ChalkStore so every engine above it

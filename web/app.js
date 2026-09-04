@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 // Sports-Rater client — thin, dependency-free. Every number on screen comes
 // from the CHALK API; this file never calculates football metrics (V3 §23).
 const $ = (s, el = document) => el.querySelector(s);
@@ -215,7 +220,7 @@ function renderSiteFoot() {
   const f = $("#site-foot"); if (!f) return;
   const lic = state.meta?.licensing;
   const src = lic ? Object.values(lic).map((l) => l?.name || l?.source).filter(Boolean) : [];
-  f.innerHTML = `<div>${esc(state.meta?.team_logos?.disclaimer ?? "")}</div>${src.length ? `<div>Data: ${esc(src.join(" · "))}. The database knows. Deterministic code calculates. The model interprets. Provenance proves.</div>` : ""}`;
+  f.innerHTML = `<div>${esc(state.meta?.team_logos?.disclaimer ?? "")}</div>${src.length ? `<div>Data: ${esc(src.join(" · "))}. The database knows. Deterministic code calculates. The model interprets. Provenance proves.</div>` : ""}<div class="legal">© ${new Date().getUTCFullYear()} <b>Interchained LLC</b> · CHALK / Sports-Rater · Business Source License 1.1 (SPDX: BUSL-1.1) · Licensor: Interchained LLC</div>`;
 }
 let homeRefreshAttempts = 0;
 async function loadHome(defId) {

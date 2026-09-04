@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 · Copyright (c) 2026 Interchained LLC. All rights reserved. -->
 # CHALK
 
 **Live Football Intelligence.** The engine behind [sports-rater.com](https://sports-rater.com).

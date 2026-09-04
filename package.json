@@ -1,11 +1,15 @@
 {
   "name": "chalk-engine",
-  "version": "0.8.5",
-  "description": "CHALK — local-first football intelligence engine behind sports-rater.com. The database knows. Deterministic code calculates. The model interprets. Provenance proves.",
+  "version": "0.8.6",
+  "description": "CHALK \u2014 local-first football intelligence engine behind sports-rater.com. The database knows. Deterministic code calculates. The model interprets. Provenance proves.",
   "type": "module",
   "license": "BUSL-1.1",
-  "engines": { "node": ">=24" },
-  "bin": { "chalk": "./bin/chalk.ts" },
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "chalk": "./bin/chalk.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "node --test \"tests/*.test.ts\" && CHALK_TEST_STORE=embedded node --test \"tests/*.test.ts\"",
@@ -22,5 +26,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.6.0"
-  }
+  },
+  "author": "Interchained LLC <founders@vibecode-101.com> (https://sports-rater.com)",
+  "copyright": "Copyright (c) 2026 Interchained LLC"
 }

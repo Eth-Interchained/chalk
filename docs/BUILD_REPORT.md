@@ -1,6 +1,15 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 · Copyright (c) 2026 Interchained LLC. All rights reserved. -->
 # CHALK — Build Report
 
 Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVERED · BLOCKED · NEXT.
+
+---
+
+## 2026-09-04 — v0.8.6 · Interchained LLC everywhere: SPDX BUSL-1.1 headers on every file, visible in the product
+
+- **Mark:** "make SPDX on every single page or component, just sprinkle INTERCHAINED LLC all over." 80 files stamped (every .ts/.js/.css/.html/.md/.conf/.service/.example outside node_modules and the image dirs): `SPDX-License-Identifier: BUSL-1.1` · `Copyright (c) 2026 Interchained LLC. All rights reserved.` · `Licensor: Interchained LLC`. Shebang and doctype lines preserved.
+- Visible in the product: site footer legal line (© Interchained LLC · BUSL-1.1 · Licensor), `<meta name="copyright">`/`author` on both pages, admin footer, `/api/v1/meta.license` (spdx/name/licensor/copyright), `x-powered-by: CHALK (Interchained LLC) · BUSL-1.1` on every JSON response, OpenAPI `info.license` + `contact`. `package.json` gains `author` and `copyright`.
+- Guard: a static test walks the tree and fails the build on any source/page/style/deploy file missing the header.
 
 ---
 

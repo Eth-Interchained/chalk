@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * Ingest integration tests against a REAL nedbd (the bundled nedbd-v2 binary,
  * in-memory mode, on an ephemeral port). Skipped with a logged reason when the

@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * CHALK HTTP server — open JSON API + SSE ask loop + static client.
  *
@@ -205,7 +210,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     if (p === "/api/v1/meta") {
       const mt = await meta();
       const defs = await listDefinitions(store);
-      return json(res, 200, { teams: mt.teams, seasons: mt.seasons, defaults: { team: defaultTeam, season: defaultSeason || null }, rating_definitions: defs.map((d) => ({ id: d.id, name: d.name, version: d.version, components: d.components })), licensing: LICENSING, team_logos: logoConfig(), telemetry: process.env.CHALK_TELEMETRY !== "0", suggested_questions: SUGGESTED });
+      return json(res, 200, { teams: mt.teams, seasons: mt.seasons, defaults: { team: defaultTeam, season: defaultSeason || null }, rating_definitions: defs.map((d) => ({ id: d.id, name: d.name, version: d.version, components: d.components })), licensing: LICENSING, team_logos: logoConfig(), telemetry: process.env.CHALK_TELEMETRY !== "0", license: { spdx: "BUSL-1.1", name: "Business Source License 1.1", licensor: "Interchained LLC", copyright: `Copyright (c) ${new Date().getUTCFullYear()} Interchained LLC. All rights reserved.` }, suggested_questions: SUGGESTED });
     }
     if (p === "/api/v1/teams") return json(res, 200, { teams: (await meta()).teams });
     if (p === "/api/v1/verify") return json(res, 200, await store.verify());
@@ -779,7 +784,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const s = JSON.stringify(body);
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s) });
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s), "x-powered-by": "CHALK (Interchained LLC) · BUSL-1.1" });
   res.end(s);
 }
 

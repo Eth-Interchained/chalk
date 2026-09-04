@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * LLM client — OpenAI-compatible chat completions over our own inference
  * infrastructure (AiAS PIN → hearth on the A6000, model GLM-4-32B by Mark's

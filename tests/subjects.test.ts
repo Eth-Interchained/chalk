@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fixtureRows, fixtureGame } from "./fixture.ts";
