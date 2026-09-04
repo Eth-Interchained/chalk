@@ -4,6 +4,17 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.7.3 · opponent_report: "the CIN defense" scouts the defense; model plans repaired instead of rejected
+
+### SHIPPED
+- **Mark:** "What should I know about the CIN defense?" → badges `opponent_report · rules · fallback`, log `planner: model plan rejected: opponent_report needs filters.opponent — falling back to rules`, and every statement described the CIN **offense**. Two bugs. (1) The validator rejected a model plan that had put CIN in `team` and left `opponent` empty — the model meant "scout CIN"; the validator now repairs it (non-default team with no opponent ⇒ that team is the opponent; then the schedule; only then an error that says why). (2) The rule planner flipped to defense only on the literal phrase "their defense"; "the CIN defense" / "defensive front" now scout the defense (an explicit "offense" mention still wins for offense questions).
+- Prompt makes the team/opponent roles explicit with the exact example; PROMPT_VERSION 0.4.1. `opponent === team` is rejected with a named reason.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: rule routing for defense/offense/next-opponent phrasings; validator repair of the exact rejected plan; schedule fallback; explicit errors; 67/67 both stores. Live: the exact question on the local store plans `opponent_report TB vs CIN side=defense` and the statements read "Offenses facing CIN …".
+
+---
+
 ## 2026-09-04 — v0.7.2 · the feed is the record: persistent, paginated answer history
 
 ### SHIPPED

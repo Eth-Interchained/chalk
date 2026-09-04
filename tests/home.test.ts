@@ -188,7 +188,9 @@ test("planner: opponent_report validates and the rule planner routes scouting qu
   assert.ok(v.ok, v.errors.join(";"));
   assert.equal(v.plan!.filter!.team, "CAR");
   assert.equal(v.plan!.filter!.side, "offense");
-  assert.equal(validatePlan({ intent: "opponent_report", filters: {} }, ctx).ok, false);
+  // Empty filters resolve from the schedule when the context knows the next opponent; without one it is a named error.
+  assert.equal(validatePlan({ intent: "opponent_report", filters: {} }, ctx).ok, Boolean(ctx.next_opponent));
+  assert.equal(validatePlan({ intent: "opponent_report", filters: {} }, { ...ctx, next_opponent: undefined }).ok, false);
   assert.equal(validatePlan({ intent: "opponent_report", filters: { opponent: "ZZZ" } }, ctx).ok, false);
   const p1 = rulePlan("What should I know about this week's opponent?", ctx)!;
   assert.equal(p1.intent, "opponent_report");

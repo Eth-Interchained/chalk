@@ -238,9 +238,17 @@ export function validatePlan(input: unknown, ctx: PlanContext): { ok: boolean; p
     }
     case "opponent_report": {
       const f = withDefaults(filters);
-      const opponent = typeof f.opponent === "string" ? f.opponent.toUpperCase() : null;
-      if (!opponent) return { ok: false, errors: ["opponent_report needs filters.opponent"] };
+      let opponent = typeof f.opponent === "string" ? f.opponent.toUpperCase() : null;
+      let team = typeof f.team === "string" ? f.team.toUpperCase() : ctx.default_team;
+      // Repair instead of reject: a model that writes the scouted team into
+      // `team` and leaves `opponent` empty meant "scout that team". The fan's
+      // own team is the context default. Then: no team named -> the schedule.
+      if (!opponent && team !== ctx.default_team) { opponent = team; team = ctx.default_team; }
+      if (!opponent && ctx.next_opponent) opponent = ctx.next_opponent.toUpperCase();
+      if (!opponent) return { ok: false, errors: ["opponent_report needs filters.opponent (no team named and no next opponent in context)"] };
+      if (opponent === team) return { ok: false, errors: [`opponent_report: opponent ${opponent} is the same as team ${team}`] };
       if (ctx.teams.length && !ctx.teams.includes(opponent)) return { ok: false, errors: [`opponent: ${opponent} is not a known team`] };
+      f.team = team;
       // side = which unit of the OPPONENT we scout. Default: their offense (what our defense faces).
       const side = f.side === "defense" ? "defense" : "offense";
       const v = validateFilter({ team: opponent, season: f.season, side });
@@ -324,7 +332,11 @@ export function rulePlan(question: string, ctx: PlanContext): Omit<QueryPlan, "l
     // team named in the question is the opponent; otherwise the schedule decides.
     const mentioned = resolveTeam(question, ctx.teams.filter((t) => t !== ctx.default_team));
     const opponent = mentioned ?? ctx.next_opponent;
-    if (opponent) return mk("opponent_report", { team: ctx.default_team, opponent, season, side: /their defen[cs]e|against their d/.test(q) ? "defense" : "offense" });
+    // "the CIN defense", "their defense", "defensive front", "how do we attack their D" -> scout their DEFENSE.
+    // Mentioning offense anywhere wins (e.g. "their defense against our offense" still scouts... their defense — handled: offense mention only wins when defense is absent).
+    const wantsDefense = /\b(defen[cs]e|defensive|their d)\b/.test(q);
+    const wantsOffense = /\b(offen[cs]e|offensive)\b/.test(q);
+    if (opponent) return mk("opponent_report", { team: ctx.default_team, opponent, season, side: wantsDefense && !(wantsOffense && !/their defen[cs]e|(the )?[A-Za-z]+ defen[cs]e/.test(q)) ? "defense" : "offense" });
   }
   if (/why .*(disagree|different)|rating.*(vs|versus|compare)|compare.*rating/.test(q)) return null; // needs explicit ids — UI path
   if (/\brating|rated|grade|score out of|badge\b/.test(q)) {

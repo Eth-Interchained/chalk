@@ -130,3 +130,24 @@ test("explain: evidence prompt stays compact and the fallback is never blank", (
   assert.equal(deterministicFallback(pkg), "TB converted 8 of 15.");
   assert.ok(deterministicFallback({ ...pkg, deterministic_statements: [] }).length > 20);
 });
+
+test("opponent_report: 'the CIN defense' scouts CIN's DEFENSE; model plan with team=CIN and no opponent is repaired, not rejected", () => {
+  const ctx = { default_team: "TB", default_season: 2025, teams: ["TB", "CIN", "KC", "CAR"], next_opponent: "CIN" };
+  const d = rulePlan("What should I know about the CIN defense?", ctx)!;
+  assert.equal(d.intent, "opponent_report");
+  assert.deepEqual([d.filters.team, d.filters.opponent, d.filters.side], ["TB", "CIN", "defense"]);
+  const o = rulePlan("What should I know about the CIN offense?", ctx)!;
+  assert.equal(o.filters.side, "offense");
+  const t = rulePlan("How do we attack their defensive front this week?", ctx)!;
+  assert.deepEqual([t.filters.opponent, t.filters.side], ["CIN", "defense"]);
+  const n = rulePlan("What should I know about this week's opponent?", ctx)!;
+  assert.deepEqual([n.filters.opponent, n.filters.side], ["CIN", "offense"]);
+  // Model wrote the scouted team into `team` and omitted `opponent` (the exact rejection Mark saw in the logs).
+  const v = validatePlan({ intent: "opponent_report", filters: { team: "CIN", season: 2025, side: "defense" } }, ctx);
+  assert.ok(v.ok, v.errors.join(";"));
+  assert.deepEqual([v.plan!.filters.team, v.plan!.filters.opponent, v.plan!.filters.side], ["TB", "CIN", "defense"]);
+  // No team, no opponent -> schedule; and without a schedule it is a clear error.
+  assert.equal(validatePlan({ intent: "opponent_report", filters: { season: 2025 } }, ctx).plan!.filters.opponent, "CIN");
+  assert.match(validatePlan({ intent: "opponent_report", filters: { season: 2025 } }, { ...ctx, next_opponent: undefined }).errors[0], /no team named and no next opponent/);
+  assert.match(validatePlan({ intent: "opponent_report", filters: { team: "TB", opponent: "TB" } }, ctx).errors[0], /same as team/);
+});
