@@ -12,7 +12,7 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { auditSeason } from "../ingest/audit.ts";
-import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapshot, type HomePayload } from "./home.ts";
+import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapshot, type HomePayload, dataStampFrom, type IngestEventLike, type PulseEventLike } from "./home.ts";
 import type { RatingDefinition } from "../rating/definitions.ts";
 import { logoConfig } from "./logos.ts";
 import { createRequire } from "node:module";
@@ -96,7 +96,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
   const webDir = opts.webDir ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web");
   const defaultTeam = opts.defaultTeam ?? process.env.CHALK_DEFAULT_TEAM ?? "TB";
   let defaultSeason = opts.defaultSeason ?? (process.env.CHALK_DEFAULT_SEASON ? Number(process.env.CHALK_DEFAULT_SEASON) : 0);
-  // Data version stamp = ingest + pulse event count, maintained by the watcher
+  // Data version stamp = last seq at which ingest/pulse wrote (dataStampFrom), maintained by the watcher
   // tick below. null until the first tick has run. Persisted Home snapshots
   // carry the stamp they were built from; equal stamp => nothing changed.
   let dataStamp: string | null = null;
@@ -745,21 +745,28 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
   // finishes a run, a new football_ingest_events row appears. Drop every
   // in-process cache so the next request recomputes against the new plays.
   // Polls a tiny collection; logs every invalidation.
-  let lastIngestCount = -1;
   const watchMs = Number(process.env.CHALK_INGEST_WATCH_MS ?? 60_000);
   if (watchMs > 0) {
     const tick = async () => {
       try {
-        const n = (await store.client.queryFull(`FROM ${COLL.ingest_events}`)).count + (await store.client.queryFull(`FROM ${PULSE_EVENTS}`).catch(() => ({ count: 0 }))).count;
-        dataStamp = String(n);
-        if (lastIngestCount >= 0 && n !== lastIngestCount) {
+        // Stamp = last seq at which ingest / pulse actually wrote something —
+        // NOT the event count: a do-nothing watch tick still writes its own
+        // event row and must not mark every Home snapshot stale (v0.9.1).
+        // queryFull bypasses the NQL cache on purpose: a watcher that reads its
+        // own cached answer cannot see the ingest it is watching for.
+        const [ingestEvents, pulseEvents] = await Promise.all([
+          store.client.queryFull(`FROM ${COLL.ingest_events}`).then((r) => r.rows as IngestEventLike[]),
+          store.client.queryFull(`FROM ${PULSE_EVENTS}`).then((r) => r.rows as PulseEventLike[]).catch((e) => { log(`ingest watcher: ${PULSE_EVENTS} unreadable (${(e as Error).message}) — pulse ignored in data stamp`); return [] as PulseEventLike[]; }),
+        ]);
+        const next = dataStampFrom(ingestEvents, pulseEvents);
+        if (dataStamp !== null && next !== dataStamp) {
           store.invalidateCache();
           invalidateLeagueCache();
           invalidateProfileCache();
           teamsCache = null;
-          log(`data changed (${lastIngestCount} -> ${n} ingest/pulse events): caches invalidated`);
+          log(`data changed (stamp ${dataStamp} -> ${next}; ${ingestEvents.length} ingest runs, ${pulseEvents.length} pulse ticks on record): caches invalidated`);
         }
-        lastIngestCount = n;
+        dataStamp = next;
       } catch (e) {
         log(`ingest watcher tick failed: ${(e as Error).message}`);
       }

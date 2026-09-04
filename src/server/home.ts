@@ -224,7 +224,7 @@ export interface HomeSnapshotDoc {
   team: string;
   season: number;
   definition_id: string;
-  /** Data version the payload was built from (ingest + pulse event count, see app.ts). */
+  /** Data version the payload was built from — see dataStampFrom(): the last NEDB seq at which ingest / pulse actually WROTE something. */
   data_stamp: string;
   snapshot_version: string;
   built_ms: number;
@@ -255,4 +255,34 @@ export function homeServeDecision(snap: HomeSnapshotDoc | null, currentStamp: st
   if (!snap) return "compute";
   if (currentStamp !== null && snap.data_stamp === currentStamp) return "fresh_snapshot";
   return "stale_snapshot";
+}
+
+// ---------------------------------------------------------------------------
+// Data stamp — "has the data changed since this snapshot was built?"
+//
+// v0.9.0 and earlier stamped snapshots with the COUNT of ingest + pulse event
+// rows. Every watch tick writes one of each even when it changes nothing
+// (run_id includes started_at), so the stamp moved every 30 minutes with zero
+// new plays and Home rebuilt on a timer: "first look at this team since the
+// data changed" with the next game ten days out. The stamp counted runs, not
+// data. Now it is the highest NEDB seq at which a run actually wrote or
+// changed a raw / normalized / context / game-state row. Do-nothing ticks
+// leave it alone.
+
+export interface IngestEventLike { nedb_seq_after?: number; raw_written?: number; raw_changed?: number; normalized_written?: number; context_written?: number }
+export interface PulseEventLike { nedb_seq?: number; raw_written?: number; raw_changed?: number; states_written?: number }
+
+export function ingestRunWrote(e: IngestEventLike): boolean {
+  return (e.raw_written ?? 0) > 0 || (e.raw_changed ?? 0) > 0 || (e.normalized_written ?? 0) > 0 || (e.context_written ?? 0) > 0;
+}
+export function pulseTickWrote(e: PulseEventLike): boolean {
+  return (e.raw_written ?? 0) > 0 || (e.raw_changed ?? 0) > 0 || (e.states_written ?? 0) > 0;
+}
+
+/** Pure: `w<seq>:p<seq>` — last writing ingest run's seq, last writing pulse tick's seq. Stable across do-nothing ticks. */
+export function dataStampFrom(ingestEvents: IngestEventLike[], pulseEvents: PulseEventLike[]): string {
+  let w = 0, p = 0;
+  for (const e of ingestEvents) if (ingestRunWrote(e)) w = Math.max(w, Number(e.nedb_seq_after ?? 0));
+  for (const e of pulseEvents) if (pulseTickWrote(e)) p = Math.max(p, Number(e.nedb_seq ?? 0));
+  return `w${w}:p${p}`;
 }

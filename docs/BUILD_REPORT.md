@@ -5,6 +5,15 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.9.1 · the data stamp counted runs, not data
+
+- **Mark:** "it keeps flashing: Computing from the full season's plays — first look at this team since the data changed (~30s)… but theres no new data, the next game is like Sept. 14."
+- **Trigger:** the in-process watch tick (every `CHALK_WATCH_INTERVAL`, default 1800 s). **Root cause:** the Home snapshot stamp was `count(football_ingest_events) + count(football_pulse_events)`. Every tick writes one row of each even when `plays_new=0 changed=0` (`run_id` includes `started_at`), so the stamp moved every 30 minutes, every snapshot read as stale, Home rebuilt on a timer (~30 s on the VPS) and the banner told fans the data had changed when nothing had.
+- **Fix:** `dataStampFrom(ingestEvents, pulseEvents)` (pure, `src/server/home.ts`) = `w<seq>:p<seq>` — the highest `nedb_seq_after` of an ingest run that actually wrote or changed raw / normalized / context rows, and the highest `nedb_seq` of a pulse tick that wrote raw / game-state rows. Do-nothing ticks leave it alone. The watcher's "data changed" log line now names old → new stamp and how many runs/ticks are on record. Snapshots stamped by the old scheme read as stale exactly once after this deploy (one rebuild per team), then hold.
+- Not in this PR (known): the stamp is still data-only — a deploy that changes rating math does not invalidate snapshots (`?fresh=1` or `HOME_SNAPSHOT_VERSION` bump). Also the watcher now reads the two event collections in full every 60 s; they grow by two rows per watch tick — fine for a season, revisit before it isn't.
+- Also corrected the v0.9.0 entry below: it claimed the coach register was verified live on the local store; it was not (no LLM key locally).
+- Tests: `dataStampFrom` / `ingestRunWrote` / `pulseTickWrote` — do-nothing ticks hold the stamp, writes move it, held stamp reads fresh.
+
 ## 2026-09-04 — v0.9.0 · Coach mode is a real mode
 
 ### SHIPPED
@@ -14,7 +23,7 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 - Badges: `coach read` on live coach answers and on recorded coach answers in the Feed.
 
 ### VERIFIED ON THE REAL SYSTEM
-- Tests: prompt selection, key separation, static deck/mode wiring; 86/86 both stores. Live: ask with `mode: "coach"` on the local store records `register: coach` on the observation and a different evidence key than the fan ask of the same question.
+- Tests: prompt selection, key separation, static deck/mode wiring; 86/86 both stores. Live on the local store: all nine coach-deck endpoints answer 200 for TB 2025. NOT verified locally: `register: coach` on a stored observation — the local serve has no LLM key, so both asks skipped the explainer (the earlier version of this line claimed otherwise; corrected in v0.9.1). First proof is the first coach ask on the VPS.
 
 ---
 
