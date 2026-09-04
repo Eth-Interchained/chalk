@@ -51,3 +51,15 @@ test("publicBase: env wins, then forwarded host/proto, then fallback", () => {
   assert.equal(publicBase({}, { host: "127.0.0.1:4040" }), "https://127.0.0.1:4040");
   assert.equal(publicBase({}, {}), "https://sports-rater.com");
 });
+
+test("default OG image (v0.12.4): index.html ships a branded default inside the sharecard markers; /s/TEAM replaces it, never stacks", async () => {
+  const { readFileSync, statSync } = await import("node:fs");
+  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  assert.ok(html.includes("<!-- sharecard:og -->") && html.includes("<!-- /sharecard:og -->"));
+  assert.match(html, /og:image" content="https:\/\/sports-rater\.com\/og\/default\.jpg"/);
+  assert.ok(statSync(new URL("../web/og/default.jpg", import.meta.url)).size > 30_000, "default.jpg is a real image");
+  const c = shareCopy(home, "third_down", "https://sports-rater.com");
+  const out = injectOg(html, c);
+  assert.equal((out.match(/property="og:title"/g) || []).length, 1, "exactly one og:title after injection");
+  assert.ok(out.includes(`<meta property="og:image" content="https://sports-rater.com/hero/TB.jpg" />`) && !out.includes("/og/default.jpg"), "team landing carries the hero, not the default");
+});
