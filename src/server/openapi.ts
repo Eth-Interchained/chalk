@@ -11,7 +11,7 @@ export function openapiDocument(baseUrl: string) {
     openapi: "3.1.0",
     info: {
       title: "CHALK — Sports-Rater Football Intelligence API",
-      version: "0.3.0",
+      version: "0.4.0",
       description:
         "Deterministic football analytics over an NEDB provenance store. The database knows. Deterministic code calculates. The model interprets. Provenance proves. Every analysis, rating, play and model observation is addressable and traceable to raw source records.",
       license: { name: "BUSL-1.1" },
@@ -19,7 +19,7 @@ export function openapiDocument(baseUrl: string) {
     servers: [{ url: baseUrl }],
     tags: [
       { name: "system" }, { name: "teams" }, { name: "games" }, { name: "plays" }, { name: "analyses" },
-      { name: "tendencies" }, { name: "comparisons" }, { name: "ratings" }, { name: "ask" }, { name: "provenance" }, { name: "ingest" },
+      { name: "tendencies" }, { name: "comparisons" }, { name: "ratings" }, { name: "ask" }, { name: "provenance" }, { name: "ingest" }, { name: "fans" },
     ],
     paths: {
       "/api/v1/health": { get: { tags: ["system"], summary: "CHALK + NEDB health, head, seq, model config", responses: ok("Health") } },
@@ -51,6 +51,13 @@ export function openapiDocument(baseUrl: string) {
       "/api/v1/badges": { get: { tags: ["ratings"], summary: "Deterministic league-relative badges earned by a team, with qualification rules", parameters: [q("team", "string", true), q("season", "integer")], responses: ok("Badges") } },
       "/api/v1/reports/opponent": { get: { tags: ["analyses", "tendencies"], summary: "Opponent report: tendencies by situation with formation/personnel context, weak and strong spots", parameters: [q("team", "string", true), q("opponent", "string", false, "defaults to the team's next scheduled opponent"), q("season", "integer"), q("side", "string", false, "offense (their offense, default) | defense")], responses: ok("OpponentReport") } },
       "/api/v1/teams/{team}/home": { get: { tags: ["teams", "ratings"], summary: "Home composite: rating, trend, badges, recent form, last game + deviation, next game + opponent snapshot, weakest situations", parameters: [p("team"), q("season", "integer"), q("definition", "string")], responses: ok("Home") } },
+      "/api/v1/fans/ratings": { post: { tags: ["fans"], summary: "Fan rates a team on a subject (0-100). No account: body carries fan_id (sha256 of nickname:salt, computed on the device) + handle nick#xxxxxx. Stored caused_by the CHALK snapshot; re-rating replaces. Returns consensus.", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["fan_id", "handle", "team", "season", "subject", "score"], properties: { fan_id: { type: "string" }, handle: { type: "string" }, team: { type: "string" }, season: { type: "integer" }, subject: { type: "string" }, score: { type: "integer" }, snapshot_id: { type: "string" }, chalk_score: { type: "number" } } } } } }, responses: ok("FanWrite") } },
+      "/api/v1/fans/reactions": { post: { tags: ["fans"], summary: "like | agree | disagree on any football_* or sr_* record", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["fan_id", "handle", "target_coll", "target_id", "reaction"], properties: { fan_id: { type: "string" }, handle: { type: "string" }, target_coll: { type: "string" }, target_id: { type: "string" }, reaction: { type: "string", enum: ["like", "agree", "disagree"] } } } } } }, responses: ok("FanWrite") } },
+      "/api/v1/fans/posts": { post: { tags: ["fans"], summary: "A take (<=280 chars, no links), optionally attached to a team/game/record", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["fan_id", "handle", "text"], properties: { fan_id: { type: "string" }, handle: { type: "string" }, text: { type: "string" }, team: { type: "string" }, game_id: { type: "string" }, target_coll: { type: "string" }, target_id: { type: "string" } } } } } }, responses: ok("FanWrite") } },
+      "/api/v1/feed": { get: { tags: ["fans"], summary: "Newest-first feed of fan posts and ratings (the hash chain, rendered)", parameters: [q("team", "string"), q("limit", "integer"), q("include", "string", false, "comma list of post,rating,reaction")], responses: ok("Feed") } },
+      "/api/v1/fans/consensus": { get: { tags: ["fans"], summary: "Fan mean/median per subject vs CHALK's score", parameters: [q("team", "string", true), q("season", "integer"), q("subject", "string")], responses: ok("Consensus") } },
+      "/api/v1/fans/{fan_id}": { get: { tags: ["fans", "provenance"], summary: "A fan's chain, walked tip -> first write with prev-link verification", parameters: [p("fan_id")], responses: ok("FanChain") } },
+      "/api/v1/identicon/{fan_id}.svg": { get: { tags: ["fans"], summary: "Deterministic identicon", parameters: [p("fan_id"), q("size", "integer")], responses: { "200": { description: "image/svg+xml" } } } },
       "/api/v1/rating-definitions": {
         get: { tags: ["ratings"], summary: "Built-in + custom rating definitions", responses: ok("Definitions") },
         post: { tags: ["ratings"], summary: "Create a custom rating profile (weights normalized, stored versioned in NEDB)", requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/RatingDefinitionInput" } } } }, responses: ok("Definition") },
@@ -91,6 +98,10 @@ export function openapiDocument(baseUrl: string) {
         Plan: { type: "object" },
         Trend: { type: "object" },
         Rankings: { type: "object" },
+        FanWrite: { type: "object" },
+        Feed: { type: "object" },
+        Consensus: { type: "object" },
+        FanChain: { type: "object" },
         Badges: { type: "object" },
         OpponentReport: { type: "object" },
         Home: { type: "object" },

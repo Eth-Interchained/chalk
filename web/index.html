@@ -19,6 +19,7 @@
     <span class="mark">SPORTS<b>RATER</b></span><span class="sub">powered by CHALK</span>
   </a>
   <div class="ctx">
+    <button id="who" class="pill who" title="Your Sports-Rater handle — no account, just math">rate as…</button>
     <select id="team" class="pill" aria-label="Team"></select>
     <select id="season" class="pill" aria-label="Season"></select>
     <button id="mode" class="pill mode" aria-pressed="false" title="Toggle coach view">Fan</button>
@@ -81,6 +82,11 @@
         <div class="tile-h">Rating components</div>
         <div class="rc-components" id="rc-components"></div>
       </section>
+      <section class="tile fanfeed" id="tile-feed">
+        <div class="tile-h">Fans <span class="muted" id="feed-sub"></span></div>
+        <form id="take" class="take" autocomplete="off"><input id="take-text" maxlength="280" placeholder="Your take (no links, 280 max)…" /><button type="submit" class="chip">Post</button></form>
+        <div id="feed-body" class="feed-body"></div>
+      </section>
     </div>
   </section>
 
@@ -103,6 +109,8 @@
     <div class="prose"></div>
     <div class="coach"></div>
     <footer class="card-foot">
+      <button class="chip act-react" data-kind="agree">👍 Agree</button>
+      <button class="chip act-react" data-kind="disagree">👎 Disagree</button>
       <button class="chip act-evidence">Show evidence</button>
       <button class="chip act-coach">Coach view</button>
       <button class="chip act-provenance">Provenance</button>
