@@ -191,4 +191,4 @@ tests/                  node --test suites + frozen fixture
 docs/                   NFLData OpenAPI snapshot, build report
 ```
 
-© 2026 Interchained LLC · BUSL-1.1 (see `LICENSE`) · built by Interchained × Vex
+© 2026 Interchained LLC · GPL-3.0-only (see `LICENSE`) · built by Interchained × Vex
