@@ -19,17 +19,17 @@ question
 
 No computer vision. No hosted database. No model doing arithmetic.
 
-## What runs today (v0.1.0)
+## What runs today (v0.2.0)
 
 | Layer | What it does |
 | --- | --- |
 | `src/source/` | `FootballSource` contract + **NFLData** adapter (nflverse gold layer, verified against the live OpenAPI). `PulseSource` contract + **TheSportsDB** adapter for near-live scores (Pulse v1). Licensing registry per dataset. |
-| `src/ingest/` | Immutable raw observations, normalized plays/games with lineage, idempotent re-runs (`source_hash`), upstream-change detection with `football_source_changes` events, an ingest event per run, pulse ticks. |
-| `src/engine/` | Situation filter (validate → coarse NQL → fine filter in code), metrics with a sample-size ladder, **third-down analysis**, **tendency vs baseline**, **A/B comparison**, **30-bucket situation scan**, **season-vs-game deviation**. |
-| `src/rating/` | Versioned rating definitions, percentile-rank normalization, 0–100 snapshots that record population, weights, raw and normalized values; custom profiles; deterministic **disagreement explainer**. |
+| `src/ingest/` | Immutable raw observations, normalized plays/games with lineage, idempotent re-runs (`source_hash`), upstream-change detection with `football_source_changes` events, an ingest event per run, pulse ticks. **Play context** (`--context-only` / `--deep`): participation + charting joined into `football_play_context` — formation, personnel group, motion, play-action, pressure, box counts. |
+| `src/engine/` | Situation filter (validate → coarse NQL → fine filter in code), metrics with a sample-size ladder, **third-down analysis**, **tendency vs baseline** (with formation/personnel **context patterns**), **A/B comparison**, **30-bucket situation scan**, **season-vs-game deviation**, **trend** (rating week over week, as known then) + recent form, **opponent report**. |
+| `src/rating/` | Versioned rating definitions, percentile-rank normalization, 0–100 snapshots that record population, weights, raw and normalized values; custom profiles; deterministic **disagreement explainer**; **badges** (league-relative, versioned, min-sample protected). |
 | `src/llm/` | OpenAI-compatible client (inactivity-only stream deadline), versioned prompts, planner with validation + rule fallback, streaming explainer that stores every answer as an observation `caused_by` the calculations it used. |
 | `src/server/` | Zero-framework HTTP API (OpenAPI at `/api/v1/openapi.json`), SSE `POST /api/v1/ask`, provenance routes (`TRACE caused_by` as JSON), static client. |
-| `web/` | Mobile-first client: rating card, ask bar, streamed answers, evidence drawer (tap a play to ask about it), coach view, *rate differently*, league table, provenance viewer. |
+| `web/` | **Sports-Rater Home**: team-colored hero with badges, rating ring, trend sparkline, recent form, last game with deviation, next up with opponent snapshot and *Scout them*, weak spots that ask on tap; ask bar, streamed answers, evidence drawer (tap a play to ask about it), coach view, *rate differently*, league table, provenance viewer. |
 
 Everything lives in **one NEDB database** (`chalk`) on a `nedbd` daemon. NEDB is the truth, history and provenance layer — not a cache.
 
@@ -40,6 +40,8 @@ Requires Node ≥ 24 (TypeScript runs natively — no build step).
 ```bash
 npm install
 npx chalk ingest --season 2025          # ~3 min: 285 games, 48,771 plays → NEDB (autostarts nedbd-v2)
+npx chalk ingest --season 2025 --context-only   # ~6 min: formation/personnel/motion/pressure context for every play
+npx chalk ingest --season 2026          # schedule (so "this week's opponent" resolves); plays land as games are played
 npx chalk rate --team TB --season 2025  # Third Down Rating with formula, population, sample
 npx chalk serve --port 4040             # open http://127.0.0.1:4040
 ```
@@ -71,7 +73,7 @@ Every tick lands as immutable observations in `football_raw_pulse` with derived 
 ## CLI
 
 ```
-chalk ingest --season 2025 [--team TB] [--game 2025_18_CAR_TB] [--deep]
+chalk ingest --season 2025 [--team TB] [--game 2025_18_CAR_TB] [--deep | --context-only]
 chalk analyze --team TB --season 2025 [--game ID] [--side defense]
 chalk rate --team TB --season 2025 [--definition third_down_default@1.0.0]
 chalk scan --team TB --season 2025
@@ -93,6 +95,10 @@ Full document: `GET /api/v1/openapi.json`. Highlights:
 | `GET /api/v1/ratings/compare?team=TB&season=2025&a=…&b=…` | Why two formulas disagree, per component, in points |
 | `POST /api/v1/rating-definitions` | Save a custom formula (weights normalized, versioned in NEDB) |
 | `GET /api/v1/analyses/scan?team=TB&season=2025` | Situations hurting/helping the team most, min-sample protected |
+| `GET /api/v1/teams/TB/home?season=2025` | Home composite: rating, trend, badges, form, last game + deviation, next game + opponent, weak spots |
+| `GET /api/v1/ratings/third-down/trend?team=TB&season=2025` | Rating week over week, as known then |
+| `GET /api/v1/badges?team=TB&season=2025` | Earned badges with qualification rules |
+| `GET /api/v1/reports/opponent?team=TB[&opponent=CAR]` | Opponent report: six situations with formation/personnel context, weak/strong spots |
 | `POST /api/v1/tendencies` / `POST /api/v1/comparisons` | Any situation filter vs baseline / any A vs B |
 | `POST /api/v1/ask` | SSE: `plan` → `evidence` → `token*` → `observation` → `done` |
 | `GET /api/v1/plays/:id` | Normalized play + raw source record + lineage |
@@ -123,7 +129,7 @@ conversion = `first_down || touchdown` · success = `epa > 0` · explosive = pas
 
 ```bash
 npm run typecheck
-npm test              # node --test — engine, rating, planner unit tests + ingest/pulse/rating integration against a real in-memory nedbd
+npm test              # node --test — 46 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
 ```
 
 The frozen fixture is the real game `2025_18_CAR_TB` (159 plays as returned by NFLData on 2026-09-03). Ground truth asserted exactly: TB 8-of-15 on third down, 2-of-7 on third-and-long, CAR 1-of-8. The model is never required for analytics tests.

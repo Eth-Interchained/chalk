@@ -6,6 +6,10 @@
  * from a stored record the API can hand back by id.
  */
 import { compare } from "../engine/comparison.ts";
+import { contextPatterns, patternStatements, summarizePatterns } from "../engine/context.ts";
+import { opponentReport, summarizeOpponentReport } from "../engine/opponent.ts";
+import { applyFilter } from "../engine/situation.ts";
+import { loadTeamPlaysWithContext } from "./home.ts";
 import { analyzeDeviation } from "../engine/deviation.ts";
 import { computeMetrics, round } from "../engine/metrics.ts";
 import { scanSituations } from "../engine/scan.ts";
@@ -96,12 +100,23 @@ export async function execute(plan: QueryPlan, ctx: ExecContext): Promise<ExecRe
     }
     case "tendency": {
       const f = plan.filter!;
-      const { rows, seq, head } = await fetchCandidates(store, baselineFilter(f));
+      const { rows, ctx, seq, head } = await loadTeamPlaysWithContext(store, baselineFilter(f));
       const t = analyzeTendency(rows, f, { seq, head });
       const existing = await store.get(COLL.tendencies, t.id);
       const stored = existing ?? (await store.put(COLL.tendencies, t.id, t as unknown as Record<string, unknown>, { causedBy: t.evidence_hashes.slice(0, 2000), evidence: `tendency@${t.algorithm_version}` }));
       const m = t.metrics;
       const b = t.baseline;
+      const plays = rows.map((r) => r.data);
+      const keep = new Set(t.evidence);
+      const situPlays = plays.filter((p) => keep.has(p.id));
+      const basePlays = applyFilter(plays, baselineFilter(f));
+      const patterns = ctx.size ? contextPatterns(situPlays, ctx) : null;
+      const basePatterns = ctx.size ? contextPatterns(basePlays, ctx) : null;
+      const statements = t.headline ? [t.headline] : [];
+      if (patterns) statements.push(...patternStatements(f.side === "defense" ? `Offenses facing ${f.team}` : f.team, t.definition, patterns, basePatterns ?? undefined));
+      const unsupported = patterns && patterns.covered >= 10
+        ? ["coverage shell — not reliably available in public play-by-play"]
+        : t.unsupported;
       return {
         package: {
           kind: "tendency",
@@ -111,14 +126,37 @@ export async function execute(plan: QueryPlan, ctx: ExecContext): Promise<ExecRe
             situation_metrics: { pass_pct: pct(m.pass_rate), run_pct: pct(m.run_rate), success_pct: pct(m.success_rate), conversion_pct: pct(m.conversion_rate), epa_per_play: round(m.epa_per_play, 3), yards_per_play: round(m.yards_per_play, 2), explosive_pct: pct(m.explosive_rate) },
             baseline_metrics: { pass_pct: pct(b.pass_rate), run_pct: pct(b.run_rate), success_pct: pct(b.success_rate), conversion_pct: pct(b.conversion_rate), epa_per_play: round(b.epa_per_play, 3), yards_per_play: round(b.yards_per_play, 2), explosive_pct: pct(b.explosive_rate) },
             deltas: t.deltas.map((d) => ({ metric: d.metric, delta: round(d.delta, d.unit === "pp" ? 1 : 3), unit: d.unit })),
+            patterns: patterns ? summarizePatterns(patterns) : null,
+            baseline_patterns: basePatterns ? summarizePatterns(basePatterns) : null,
           },
           calculation_ids: [t.id],
           calculation_hashes: [stored._hash],
           evidence_ids: t.evidence,
-          unsupported: t.unsupported,
-          deterministic_statements: t.headline ? [t.headline] : [],
+          unsupported,
+          deterministic_statements: statements,
         },
-        detail: { tendency: t, cached: Boolean(existing) },
+        detail: { tendency: t, patterns, baseline_patterns: basePatterns, cached: Boolean(existing) },
+      };
+    }
+    case "opponent_report": {
+      const f = plan.filter!; // the OPPONENT's unit
+      const team = String(plan.filters.team);
+      const { rows, ctx, seq, head } = await loadTeamPlaysWithContext(store, f);
+      const r = opponentReport(team, rows, f, ctx, { seq, head });
+      const existing = await store.get(COLL.analyses, r.id);
+      const slim = { ...r, sections: r.sections.map((s) => ({ ...s, tendency: { id: s.tendency.id, evidence_count: s.tendency.evidence.length } })), weakest: r.weakest.map((b) => ({ ...b, evidence: b.evidence.slice(0, 100) })), strongest: r.strongest.map((b) => ({ ...b, evidence: b.evidence.slice(0, 100) })), evidence: r.evidence.slice(0, 500), evidence_count: r.evidence.length };
+      const stored = existing ?? (await store.put(COLL.analyses, r.id, slim as unknown as Record<string, unknown>, { evidence: `${r.algorithm}@${r.algorithm_version}` }));
+      return {
+        package: {
+          kind: "opponent_report",
+          summary: summarizeOpponentReport(r),
+          calculation_ids: [r.id],
+          calculation_hashes: [stored._hash],
+          evidence_ids: r.evidence,
+          unsupported: ctx.size ? ["coverage shell — not reliably available in public play-by-play"] : ["formation/personnel/motion — context not ingested for this season (chalk ingest --season N --context-only)"],
+          deterministic_statements: r.statements,
+        },
+        detail: { report: slim, cached: Boolean(existing) },
       };
     }
     case "comparison": {

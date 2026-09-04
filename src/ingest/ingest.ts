@@ -30,6 +30,7 @@ import {
   GAME_NORMALIZER_VERSION,
   PLAY_NORMALIZER_VERSION,
 } from "./normalize.ts";
+import { normalizeContext, CONTEXT_NORMALIZER_VERSION, PLAY_CONTEXT, type PlayContext } from "./context.ts";
 
 export const INGEST_VERSION = "0.1.0";
 
@@ -48,6 +49,9 @@ export interface RawDoc {
 export interface IngestCounters {
   games_fetched: number;
   plays_fetched: number;
+  context_fetched: number;
+  context_written: number;
+  context_skipped: number;
   raw_written: number;
   raw_duplicates: number;
   raw_changed: number;
@@ -76,8 +80,10 @@ export interface IngestScope {
   week?: number;
   team?: string;
   gameId?: string;
-  /** Also pull /participation and /charting raw rows for each game. */
+  /** Also pull /participation and /charting raw rows for each game and derive football_play_context. */
   deep?: boolean;
+  /** Only the participation/charting context (skip plays) — for enriching an already-ingested season. */
+  contextOnly?: boolean;
 }
 
 export interface IngestOptions {
@@ -99,6 +105,9 @@ export async function ingest(opts: IngestOptions): Promise<IngestResult> {
   const counters: IngestCounters = {
     games_fetched: 0,
     plays_fetched: 0,
+    context_fetched: 0,
+    context_written: 0,
+    context_skipped: 0,
     raw_written: 0,
     raw_duplicates: 0,
     raw_changed: 0,
@@ -121,23 +130,25 @@ export async function ingest(opts: IngestOptions): Promise<IngestResult> {
       gameRecords.push(...page);
     }
   }
-  // Providers may list future/unplayed games. Drop games without a score —
-  // there are no plays to ingest and normalizing them would create ghost rows.
-  const playable = gameRecords.filter((g) => {
+  // Providers list future/unplayed games too. Keep EVERY game record (the
+  // schedule is how CHALK knows the next opponent); fetch plays only for games
+  // that have a result.
+  const hasResult = (g: SourceRecord) => {
     const p = g.payload as { home_score?: unknown; away_score?: unknown };
     return typeof p.home_score === "number" && typeof p.away_score === "number";
-  });
-  counters.games_fetched = playable.length;
-  log(`scope ${JSON.stringify(scope)} -> ${gameRecords.length} games listed, ${playable.length} with results`);
+  };
+  const played = gameRecords.filter(hasResult);
+  counters.games_fetched = played.length;
+  log(`scope ${JSON.stringify(scope)} -> ${gameRecords.length} games listed, ${played.length} with results`);
 
-  // 2. Raw + normalized games.
+  // 2. Raw + normalized games (all listed, played or scheduled).
   const games: Map<string, { game: Game; rawHash: string }> = new Map();
-  for (const rec of playable) {
+  for (const rec of gameRecords) {
     try {
       const raw = await upsertRaw(store, COLL.raw_games, rec, counters, now);
       const game = normalizeNflDataGame(rec.payload as Record<string, unknown>, raw._hash, now());
       await upsertNormalized(store, COLL.games, game.id, game as unknown as Record<string, unknown>, raw._hash, GAME_NORMALIZER_VERSION, counters);
-      games.set(game.id, { game, rawHash: raw._hash });
+      if (hasResult(rec)) games.set(game.id, { game, rawHash: raw._hash });
     } catch (e) {
       counters.errors.push({ where: "game", id: rec.recordId, error: (e as Error).message });
       log(`ERROR game ${rec.recordId}: ${(e as Error).message}`);
@@ -151,17 +162,14 @@ export async function ingest(opts: IngestOptions): Promise<IngestResult> {
   for (const gameId of gameIds) {
     const ctx = games.get(gameId)!;
     try {
-      const fetched: SourceRecord[] = [];
-      for await (const page of source.plays({ gameId })) fetched.push(...page);
-      counters.plays_fetched += fetched.length;
-      await ingestPlaysForGame(store, gameId, fetched, ctx.game, counters, now, log);
-      if (scope.deep) {
-        for await (const page of source.participation(gameId)) {
-          for (const rec of page) await upsertRaw(store, COLL.raw_participation, rec, counters, now);
-        }
-        for await (const page of source.charting(gameId)) {
-          for (const rec of page) await upsertRaw(store, COLL.raw_charting, rec, counters, now);
-        }
+      if (!scope.contextOnly) {
+        const fetched: SourceRecord[] = [];
+        for await (const page of source.plays({ gameId })) fetched.push(...page);
+        counters.plays_fetched += fetched.length;
+        await ingestPlaysForGame(store, gameId, fetched, ctx.game, counters, now, log);
+      }
+      if (scope.deep || scope.contextOnly) {
+        await ingestContextForGame(store, source, gameId, counters, now, log);
       }
     } catch (e) {
       counters.errors.push({ where: "plays", id: gameId, error: (e as Error).message });
@@ -214,6 +222,9 @@ export async function ingest(opts: IngestOptions): Promise<IngestResult> {
 }
 
 export const INDEXES: Array<{ coll: string; field: string }> = [
+  { coll: PLAY_CONTEXT, field: "game_id" },
+  { coll: COLL.raw_participation, field: "source_record_id_game" },
+  { coll: COLL.raw_charting, field: "source_record_id_game" },
   { coll: COLL.plays, field: "game_id" },
   { coll: COLL.plays, field: "posteam" },
   { coll: COLL.plays, field: "defteam" },
@@ -357,6 +368,95 @@ async function upsertNormalized(
     evidence: `${String(doc.normalizer)}@${normalizerVersion}`,
   });
   counters.normalized_written++;
+}
+
+/**
+ * Participation + charting for one game → raw rows (batched, idempotent) →
+ * one football_play_context row per play id, derived_from both raw hashes.
+ */
+async function ingestContextForGame(
+  store: ChalkStore,
+  source: FootballSource,
+  gameId: string,
+  counters: IngestCounters,
+  now: () => string,
+  log: (l: string) => void,
+): Promise<void> {
+  const part: SourceRecord[] = [];
+  for await (const page of source.participation(gameId)) part.push(...page);
+  const chart: SourceRecord[] = [];
+  for await (const page of source.charting(gameId)) chart.push(...page);
+  counters.context_fetched += part.length + chart.length;
+
+  const rawHashes = new Map<string, { part?: string; chart?: string; partPayload?: Record<string, unknown>; chartPayload?: Record<string, unknown> }>();
+  for (const [coll, recs, key] of [[COLL.raw_participation, part, "part"], [COLL.raw_charting, chart, "chart"]] as const) {
+    const existing = new Map<string, NedbRow<RawDoc>>();
+    for (const r of await store.query<RawDoc>(`FROM ${coll} WHERE source_record_id_game = ${nqlStr(gameId)}`)) existing.set(r._id, r);
+    const ops: Array<{ coll: string; id: string; doc: Record<string, unknown>; causedBy?: string[]; rec: SourceRecord; prev: NedbRow<RawDoc> | null }> = [];
+    for (const rec of recs) {
+      const id = rawId(rec);
+      const hash = hashPayload(rec.payload);
+      const prev = existing.get(id) ?? null;
+      const slot = rawHashes.get(rec.recordId) ?? {};
+      if (key === "part") slot.partPayload = rec.payload as Record<string, unknown>;
+      else slot.chartPayload = rec.payload as Record<string, unknown>;
+      rawHashes.set(rec.recordId, slot);
+      if (prev && prev.data.source_hash === hash) {
+        counters.raw_duplicates++;
+        slot[key] = prev._hash;
+        continue;
+      }
+      const doc: RawDoc & { source_record_id_game: string } = {
+        source: rec.source,
+        source_endpoint: rec.endpoint,
+        source_record_id: rec.recordId,
+        source_record_id_game: gameId,
+        source_payload: rec.payload,
+        source_hash: hash,
+        source_retrieved_at: rec.retrievedAt,
+        ingest_version: INGEST_VERSION,
+        source_version: prev ? (prev.data.source_version ?? 1) + 1 : 1,
+      };
+      ops.push({ coll, id, doc: doc as unknown as Record<string, unknown>, causedBy: prev ? [prev._hash] : undefined, rec, prev });
+    }
+    if (ops.length) {
+      const res = await store.batchPut(ops);
+      counters.raw_written += res.written;
+      for (const e of res.errors) counters.errors.push({ where: `raw_${key}`, id: e.id, error: e.error });
+      for (const op of ops) {
+        const h = res.hashes.get(op.id);
+        if (!h) { counters.errors.push({ where: `raw_${key}_hash`, id: op.id, error: "batch result carried no hash" }); continue; }
+        rawHashes.get(op.rec.recordId)![key] = h;
+        if (op.prev) {
+          counters.raw_changed++;
+          await recordSourceChange(store, coll, op.id, op.prev, { _id: op.id, _hash: h, _seq: -1, _coll: coll, data: op.doc as unknown as RawDoc }, now);
+        }
+      }
+    }
+  }
+
+  const existingCtx = new Map<string, NedbRow<PlayContext>>();
+  for (const r of await store.query<PlayContext>(`FROM ${PLAY_CONTEXT} WHERE game_id = ${nqlStr(gameId)}`)) existingCtx.set(r._id, r);
+  const ts = now();
+  const ctxOps: Array<{ coll: string; id: string; doc: Record<string, unknown>; causedBy?: string[] }> = [];
+  for (const [recordId, slot] of rawHashes) {
+    const playId = Number(recordId.split(":")[1]);
+    const derived = [slot.part, slot.chart].filter((h): h is string => Boolean(h));
+    if (!derived.length) continue;
+    const doc = normalizeContext(gameId, playId, slot.partPayload ?? null, slot.chartPayload ?? null, derived, ts);
+    const prev = existingCtx.get(doc.id);
+    if (prev && prev.data.normalizer_version === CONTEXT_NORMALIZER_VERSION && JSON.stringify(prev.data.derived_from) === JSON.stringify(derived)) {
+      counters.context_skipped++;
+      continue;
+    }
+    ctxOps.push({ coll: PLAY_CONTEXT, id: doc.id, doc: doc as unknown as Record<string, unknown>, causedBy: prev ? [...derived, prev._hash] : derived });
+  }
+  if (ctxOps.length) {
+    const res = await store.batchPut(ctxOps);
+    counters.context_written += res.written;
+    for (const e of res.errors) counters.errors.push({ where: "context", id: e.id, error: e.error });
+  }
+  log(`  ${gameId}: participation=${part.length} charting=${chart.length} context+${ctxOps.length}`);
 }
 
 /**

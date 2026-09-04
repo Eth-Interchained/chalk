@@ -4,6 +4,43 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-03/04 — v0.2.0 · CHALK Home (V3 layer over the v0.1.0 core)
+
+### SHIPPED
+
+- **Participation + charting join.** `football_play_context` — one row per play, `derived_from` the raw participation and charting rows: formation, shotgun/under-center, personnel string + parsed group (11/12/21…), defenders in box, pass rushers, blitzers, pressure, motion, play-action, screen, RPO, no-huddle, time-to-throw, air yards. `chalk ingest --season 2025 --context-only` pulled **92,446 raw rows → 47,424 context rows (97% of plays)**, 0 errors, 6.5 min.
+- **Context patterns** (`engine/context.ts`): shotgun %, pass rate from shotgun / under center, personnel shares, motion %, play-action % of dropbacks, pressure % of dropbacks with success under pressure vs clean, box counts — every rate with its own denominator and coverage. Tendency answers now carry them; `unsupported` shrinks to coverage shells.
+- **Trend engine** — Third Down Rating week over week, *as known then* (only plays through week N for the team and the league it is ranked against), provisional flags, biggest move, recent form (last 4 games vs season).
+- **Opponent report** intent + `GET /reports/opponent` — six situations (early downs, 3rd&4-6, 3rd&7+, short yardage, red zone, trailing) each as tendency vs baseline with formation/personnel, plus their weak/strong spots from the scan. Rule planner routes "this week's opponent" via the schedule and "scout the Panthers" via the named team.
+- **Badges** — 8 deterministic, versioned, league-relative definitions (top/bottom percentile with min samples and a min population). SF earns THIRD DOWN MONSTER (98th pct) / MONEY DOWN / EFFICIENT; TEN earns THIRD DOWN PROBLEM / STALLING; TB earns none — honest.
+- **Home composite** `GET /teams/:team/home` — rating, trend, badges, form, last game with **deviation** (TB's last game: HIGH, driver pass_rate), next game with opponent snapshot, weakest/strongest situations, context coverage. Warmed at boot; ~300ms warm, ~10s cold.
+- **Sports-Rater Home client** — team-colored accent (32-team palette), hero abbr + badges, rating ring, trend sparkline (provisional points hollow), form deltas, last game W/L line + deviation pill, next-up card with "Scout them", weak-spot rows that ask the question on tap, components; Coach view tables for patterns and opponent sections.
+- Schedule rows: ingest now keeps unplayed games (null scores) so the next opponent resolves from the knowledge layer.
+- Tests: **46** (8 new: personnel parsing, context join, patterns on the real game, trend as-known-then, recent form, badges, opponent report, planner routing).
+
+### VERIFIED ON THE REAL SYSTEM
+
+- Live ask "What does Tampa do on 3rd and medium?" → model plan `tendency` (distance 4-6) → 48 snaps in 19ms → statements: 79.2% pass vs 56.4% baseline; **shotgun 95.8% (+34 pts), pass from shotgun 80.4%, 11 personnel 83.3%, motion 54.2%, play-action 0/38, pressured 34.2% — success 30.8% under pressure vs 56% clean** → GLM-4-32B narration; every number in the prose present in the evidence (checked programmatically).
+- `GET /reports/opponent?team=TB&opponent=CAR`: 1,059 snaps, 2,889 context rows; CAR in shotgun 59.9% (76.8% pass from gun), 11 personnel 66.6%, 3rd&7+ 84.8% pass at 97.8% shotgun, weakest very-long (−0.346 EPA/play), strongest 4th down.
+- Trend TB 2025: 22 → 18 points after fixing the tail (weeks 1–18), w1 70 (provisional, 14 att) → w4 37 → w8 34 → w18 66, rank 10→12.
+
+### DISCOVERED
+
+1. **Model honesty path works**: before the 2026 schedule was ingested, "this week's opponent" produced an `unsupported` plan (no `next_opponent` in context) — correct, not a hallucinated opponent.
+2. **PIN latency variance**: the same model answered in 11s and 55s within an hour. Inactivity-only deadline made this a non-event.
+3. **Playoff weeks repeat a team's trend point** when the team is out — trend now stops at the team's last week.
+4. `git stash && checkout` chains that abort leave edits in the stash. Check `git stash list` before trusting disk.
+
+### NEXT
+
+1. `chalk watch` (knowledge layer) — poll NFLData weekly ingest for 2026 once games land (Sept 10); pulse `--watch` during games; live deviation card wired to `football_game_state.phase === "live"`.
+2. Rating subjects beyond third down (red zone, explosiveness, ball security) using the same population machinery; badges already show the shape.
+3. Opponent report as a **Home card** ("This week: CAR — 3rd & 6 tendencies") — the Sarah screen proper.
+4. Sports-Rater fan layer (identity, likes, feed) — `sr_*` collections `caused_by` engine records.
+5. Player layer (rosters, snap counts) only if Dad/Sarah ask for it.
+
+---
+
 ## 2026-09-03 — v0.1.0 · first vertical slice, end to end on real data
 
 ### SHIPPED

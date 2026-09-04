@@ -29,6 +29,11 @@ import { GAME_STATE, PULSE_EVENTS, type GameStateDoc } from "../ingest/pulse.ts"
 import type { RawDoc } from "../ingest/ingest.ts";
 import { execute, summarizeRating } from "./intents.ts";
 import { openapiDocument } from "./openapi.ts";
+import { baseFilter, buildHome, leagueBadgePopulation, loadTeamPlaysWithContext, nextOpponent } from "./home.ts";
+import { thirdDownTrend } from "../engine/trend.ts";
+import { evaluateBadges, BADGE_DEFINITIONS } from "../rating/badges.ts";
+import { opponentReport, summarizeOpponentReport } from "../engine/opponent.ts";
+import { analyzeDeviation } from "../engine/deviation.ts";
 
 export interface ServerOptions {
   store: ChalkStore;
@@ -75,7 +80,9 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     for (const r of rows) {
       if (r.data.home_team) teams.add(r.data.home_team);
       if (r.data.away_team) teams.add(r.data.away_team);
-      if (r.data.season !== null) seasons.add(r.data.season);
+      // A season is selectable once it has at least one played game; a bare
+      // schedule (2026 before kickoff) stays out of the picker.
+      if (r.data.season !== null && r.data.home_score !== null) seasons.add(r.data.season);
     }
     teamsCache = { at: Date.now(), teams: [...teams].sort(), seasons: [...seasons].sort((a, b) => b - a) };
     if (!defaultSeason && teamsCache.seasons.length) defaultSeason = teamsCache.seasons[0];
@@ -116,7 +123,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
     if (p === "/api/v1/health" && m === "GET") {
       const [health, seq, head] = await Promise.all([store.health().catch((e) => ({ ok: false, error: (e as Error).message })), store.seq().catch(() => null), store.head().catch(() => null)]);
-      return json(res, 200, { chalk: "ok", version: "0.1.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
+      return json(res, 200, { chalk: "ok", version: "0.2.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
     }
     if (p === "/api/v1/openapi.json") return json(res, 200, openapiDocument(`${url.protocol}//${url.host}`));
     if (p === "/api/v1/meta") {
@@ -145,7 +152,13 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const teams = [g.data.home_team, g.data.away_team].filter((t): t is string => Boolean(t));
       const third = await Promise.all(teams.map((t) => runThirdDown(store, { team: t, game_id: id }, { log })));
       const pulse = await store.query<GameStateDoc>(`FROM ${GAME_STATE} WHERE game_id = ${nqlStr(id)}`);
-      return json(res, 200, { game: g.data, _hash: g._hash, third_down: third.map((t) => ({ team: t.analysis.filter.team, analysis_id: t.analysis.id, summary: summarizeThirdDown(t.analysis) })), pulse: pulse.map((r) => r.data) });
+      const deviations = g.data.season === null ? [] : await Promise.all(teams.map(async (t) => {
+        const f = baseFilter(t, g.data.season!);
+        const { rows, seq, head } = await store.queryAt<Play>(compileNql(f));
+        const d = analyzeDeviation(rows, f, id, { seq, head });
+        return { team: t, level: d.level, driver: d.driver, headline: d.headline, lines: d.lines, id: d.id };
+      }));
+      return json(res, 200, { game: g.data, _hash: g._hash, third_down: third.map((t) => ({ team: t.analysis.filter.team, analysis_id: t.analysis.id, summary: summarizeThirdDown(t.analysis) })), deviations, pulse: pulse.map((r) => r.data) });
     }
     if ((mm = p.match(/^\/api\/v1\/games\/([^/]+)\/plays$/)) && m === "GET") {
       const id = decodeURIComponent(mm[1]);
@@ -254,6 +267,38 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       if (!r) throw new HttpError(404, `no third-down data for ${team} ${season}`);
       return json(res, 200, { disagreement: r.disagreement, a: { summary: summarizeRating(r.a), snapshot: r.a.snapshot }, b: { summary: summarizeRating(r.b), snapshot: r.b.snapshot } });
     }
+    if (p === "/api/v1/ratings/third-down/trend" && m === "GET") {
+      const team = need(q, "team").toUpperCase();
+      const season = Number(q.get("season") ?? defaultSeason);
+      const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id));
+      if (!def) throw new HttpError(404, "unknown rating definition");
+      const l = await leagueThirdDown(store, season, (q.get("side") as "offense" | "defense") ?? "offense", log);
+      const t = thirdDownTrend(l.plays, team, season, def, { seq: l.seq, head: l.head }, (q.get("side") as "offense" | "defense") ?? "offense");
+      return json(res, 200, t);
+    }
+    if (p === "/api/v1/badges" && m === "GET") {
+      const team = need(q, "team").toUpperCase();
+      const season = Number(q.get("season") ?? defaultSeason);
+      const pop = await leagueBadgePopulation(store, season, "offense", log);
+      return json(res, 200, { team, season, badges: evaluateBadges(team, pop), definitions: BADGE_DEFINITIONS, population: pop.length });
+    }
+    if (p === "/api/v1/reports/opponent" && m === "GET") {
+      const team = need(q, "team").toUpperCase();
+      const opponent = (q.get("opponent") ?? (await nextOpponent(store, team)))?.toUpperCase();
+      if (!opponent) throw new HttpError(400, "opponent required (no upcoming game found to infer it)");
+      const season = Number(q.get("season") ?? defaultSeason);
+      const side = (q.get("side") as "offense" | "defense") ?? "offense";
+      const f = baseFilter(opponent, season, side);
+      const { rows, ctx, seq, head } = await loadTeamPlaysWithContext(store, f);
+      const r = opponentReport(team, rows, f, ctx, { seq, head });
+      return json(res, 200, { summary: summarizeOpponentReport(r), statements: r.statements, id: r.id, evidence_count: r.evidence.length, context_rows: ctx.size });
+    }
+    if ((mm = p.match(/^\/api\/v1\/teams\/([A-Za-z]{2,3})\/home$/)) && m === "GET") {
+      const team = mm[1].toUpperCase();
+      const season = Number(q.get("season") ?? defaultSeason);
+      const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id)) ?? THIRD_DOWN_DEFAULT_V1;
+      return json(res, 200, await buildHome(store, team, season, def, log));
+    }
     if (p === "/api/v1/rating-definitions" && m === "GET") return json(res, 200, { definitions: await listDefinitions(store), rateable_metrics: (await import("../rating/definitions.ts")).RATEABLE_METRICS });
     if (p === "/api/v1/rating-definitions" && m === "POST") {
       const body = await readJson(req);
@@ -313,7 +358,9 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
   async function planContext(body: { team?: string; season?: number; game_id?: string; play_id?: string }): Promise<PlanContext> {
     const mt = await meta();
-    return { default_team: (body.team ?? defaultTeam).toUpperCase(), default_season: body.season ?? defaultSeason ?? mt.seasons[0], game_id: body.game_id, play_id: body.play_id, teams: mt.teams };
+    const team = (body.team ?? defaultTeam).toUpperCase();
+    const next = await nextOpponent(store, team).catch((e) => { log(`next opponent lookup failed: ${(e as Error).message}`); return null; });
+    return { default_team: team, default_season: body.season ?? defaultSeason ?? mt.seasons[0], game_id: body.game_id, play_id: body.play_id, teams: mt.teams, next_opponent: next ?? undefined };
   }
 
   async function ask(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -418,6 +465,15 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
   await new Promise<void>((resolve) => server.listen(opts.port, opts.host, resolve));
   await meta().catch((e) => log(`meta warmup failed: ${(e as Error).message}`));
+  // Warm the default team's home in the background so the first fan sees
+  // ~300ms, not the ~10s cold path (three season-scale NQL scans).
+  if (defaultSeason && process.env.CHALK_WARMUP !== "0") {
+    const t0 = Date.now();
+    buildHome(store, defaultTeam, defaultSeason, THIRD_DOWN_DEFAULT_V1, () => {}).then(
+      () => log(`warmup: home ${defaultTeam} ${defaultSeason} ready in ${Date.now() - t0}ms`),
+      (e) => log(`warmup failed (server still serving): ${(e as Error).message}`),
+    );
+  }
   log(`CHALK listening on http://${opts.host}:${opts.port}  (nedb ${store.url}/${store.db}, llm ${llm ? `${llm.model}${llm.key ? "" : " [no key]"}` : "off"}, default ${defaultTeam} ${defaultSeason || "?"})`);
   return server;
 }
@@ -475,11 +531,11 @@ function labelFor(r: NedbRow): string {
 
 const SUGGESTED = [
   "Why is Tampa struggling on third down?",
+  "What should I know about this week's opponent?",
   "What situations are hurting Tampa the most?",
-  "How does Tampa's third-down rating break down?",
   "What does Tampa do on 3rd and medium?",
+  "How does Tampa's third-down rating break down?",
   "Compare Tampa's first half and second half",
-  "Tampa at home vs away",
-  "Show Tampa's third-down performance in 2025_18_CAR_TB",
+  "Tampa in the red zone",
   "Tampa when trailing",
 ];

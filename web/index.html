@@ -3,19 +3,20 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#0a0e14" />
-<title>CHALK · Sports-Rater</title>
-<meta name="description" content="Live football intelligence. The database knows. Deterministic code calculates. The model interprets. Provenance proves." />
+<meta name="theme-color" content="#07090d" />
+<title>Sports-Rater · CHALK</title>
+<meta name="description" content="Live Football Intelligence. The database knows. Deterministic code calculates. The model interprets. Provenance proves." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;0,900;1,700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/styles.css" />
 <link rel="icon" href="/chalk.svg" type="image/svg+xml" />
 </head>
 <body>
+<div class="glow" aria-hidden="true"></div>
 <header class="top">
   <a class="brand" href="/">
-    <span class="mark">CHALK</span><span class="sub">Sports-Rater</span>
+    <span class="mark">SPORTS<b>RATER</b></span><span class="sub">powered by CHALK</span>
   </a>
   <div class="ctx">
     <select id="team" class="pill" aria-label="Team"></select>
@@ -25,40 +26,64 @@
 </header>
 
 <main id="main">
-  <section id="hero" class="hero">
-    <div class="rating-card" id="rating-card">
-      <div class="rc-head">
-        <div>
-          <div class="rc-team" id="rc-team">—</div>
-          <div class="rc-label">Third Down Rating</div>
-        </div>
-        <div class="rc-rank" id="rc-rank"></div>
+  <!-- HOME -->
+  <section id="home" class="home">
+    <div class="hero" id="hero">
+      <div class="hero-team">
+        <div class="hero-abbr" id="h-abbr">—</div>
+        <div class="hero-name" id="h-name"></div>
+        <div class="hero-badges" id="h-badges"></div>
       </div>
-      <div class="rc-body">
+      <div class="hero-rating" id="rating-card">
         <div class="ring" id="ring"><svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="52"/></svg><div class="ring-num" id="rc-score">–</div></div>
-        <div class="rc-meta">
-          <div class="rc-line" id="rc-line1"></div>
-          <div class="rc-line" id="rc-line2"></div>
-          <div class="rc-line small" id="rc-line3"></div>
+        <div class="hero-rating-meta">
+          <div class="rc-label">Third Down Rating</div>
+          <div class="rc-rank" id="rc-rank"></div>
+          <div class="rc-def" id="rc-line1"></div>
           <div class="rc-actions">
-            <button class="chip" data-ask="How does Tampa's third-down rating break down?">Why this number?</button>
+            <button class="chip" data-ask="How does Tampa's third-down rating break down?">Why?</button>
             <button class="chip" id="rate-differently">Rate differently</button>
             <button class="chip" id="show-league">League</button>
           </div>
         </div>
       </div>
-      <div class="rc-components" id="rc-components"></div>
     </div>
-    <div class="pulse" id="pulse"></div>
+
+    <div class="grid">
+      <section class="tile trend" id="tile-trend">
+        <div class="tile-h">Rating trend <span class="muted" id="trend-sub"></span></div>
+        <svg id="trend-svg" viewBox="0 0 320 96" preserveAspectRatio="none"></svg>
+        <div class="tile-f" id="trend-headline"></div>
+      </section>
+      <section class="tile form" id="tile-form">
+        <div class="tile-h">Recent form</div>
+        <div class="form-body" id="form-body"></div>
+      </section>
+      <section class="tile last" id="tile-last">
+        <div class="tile-h">Last game</div>
+        <div id="last-body"></div>
+      </section>
+      <section class="tile next" id="tile-next">
+        <div class="tile-h">Next up</div>
+        <div id="next-body"></div>
+      </section>
+      <section class="tile weak" id="tile-weak">
+        <div class="tile-h">What's hurting them</div>
+        <div id="weak-body"></div>
+      </section>
+      <section class="tile comps" id="tile-comps">
+        <div class="tile-h">Rating components</div>
+        <div class="rc-components" id="rc-components"></div>
+      </section>
+    </div>
   </section>
 
   <section class="suggest" id="suggest"></section>
-
   <section id="feed" class="feed"></section>
 </main>
 
 <form id="ask" class="ask" autocomplete="off">
-  <input id="q" name="q" type="text" placeholder="Ask CHALK about football…" enterkeyhint="send" />
+  <input id="q" name="q" type="text" placeholder="Ask about any game, play, or situation…" enterkeyhint="send" />
   <button type="submit" aria-label="Ask">→</button>
 </form>
 
