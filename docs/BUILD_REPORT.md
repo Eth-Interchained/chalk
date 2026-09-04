@@ -5,6 +5,14 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.14 · AGENTS.md and LORE.md — telling the Oracle what we did
+
+- **Mark:** "We didnt even tell the Oracle what we did write AGENTS.md and LORE.md on the next cut."
+- `AGENTS.md` — the operating manual for any agent (or human) inheriting the repo: the doctrine as load-bearing design, the fact wall, the layout, the commands, store rules (one engine per dir, worker thread, targeted cache invalidation, durability contract, snapshot stamp), LLM rules (registers, evidence key, no unverified LLM claims), client rules (showCard, quiet refresh, min-width 0, wait for state.home, never trust Host), the fan layer, Mark's ten non-negotiable operating rules, the full env table, and where to start. Verified against the code as of v0.12.12.
+- `LORE.md` — the story: three builders, where the doctrine came from, the arc v0.1.0 → v0.12.12 with Mark's words verbatim, the license incident, the engine fix, what we believe now because it cost us, open threads.
+- README links both. Static test guards their presence, key content and SPDX headers. 114/114 both stores.
+- Also answered today: the default OG image (v0.12.4) is served for **every** non-API path via the SPA fallback, not just `/s/TEAM` — verified on the live HTML.
+
 ## 2026-09-04 — v0.12.13 · iPhone link previews: the OG image was served as octet-stream
 
 - **Mark:** "I went to share on iphone and it doesnt load the OG :/"

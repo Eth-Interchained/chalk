@@ -254,3 +254,13 @@ test("sharecard waits for the dashboard payload and re-homes server URLs (v0.12.
   assert.ok(body.includes("x.host !== location.host"), "server URLs are re-homed to the page's origin");
   assert.ok(js.includes("state.homeLoading = p;"), "loadHome exposes its in-flight promise");
 });
+
+test("agent handoff docs (v0.12.14): AGENTS.md and LORE.md exist, carry the doctrine, the fact wall and the operating rules, and are linked from the README", () => {
+  const agents = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+  const lore = readFileSync(new URL("../LORE.md", import.meta.url), "utf8");
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  for (const t of ["The database knows. Deterministic code calculates. The model interprets. Provenance proves.", "fact_wall.test.ts", "Never force-push", "Never round up", "Never change LICENSE", "invalidateCollection", "state.homeLoading", "CHALK_PUBLIC_URL"]) assert.ok(agents.includes(t), `AGENTS.md mentions ${t}`);
+  for (const t of ["The Oracle", "v0.9.1", "the cut", "NEDB v2.8.5", "Leftovers are a queue"]) assert.ok(lore.includes(t), `LORE.md mentions ${t}`);
+  assert.ok(readme.includes("AGENTS.md") && readme.includes("LORE.md"), "README links the handoff docs");
+  assert.ok(agents.startsWith("<!--\n  SPDX-License-Identifier: BUSL-1.1") && lore.startsWith("<!--\n  SPDX-License-Identifier: BUSL-1.1"), "SPDX headers");
+});

@@ -20,6 +20,8 @@ question
 
 No computer vision. No hosted database. No model doing arithmetic.
 
+> **Inheriting this codebase (human or AI)?** Start with [AGENTS.md](./AGENTS.md) — the operating manual, verified against the code — then [LORE.md](./LORE.md) — how it got here and why. The living version log is [docs/BUILD_REPORT.md](./docs/BUILD_REPORT.md).
+
 ## What runs today (v0.6.0)
 
 | Layer | What it does |
