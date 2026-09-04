@@ -4,6 +4,12 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — license: CHALK stays BUSL-1.1
+
+- Mark: CHALK stays under the Business Source License 1.1 (Interchained LLC, licensor). PR #30 relicensed to GPL-3.0-only on a misread of the ask; PR #31 reverts it in full — `LICENSE`, `package.json`, `package-lock.json`, README footer and OpenAPI `info.license` are BUSL-1.1 again. No code change.
+
+---
+
 ## 2026-09-04 — v0.8.5 · embedded engine on a worker thread: the HTTP thread never blocks on a scan
 
 ### SHIPPED
