@@ -4,6 +4,17 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.1 · team hero: 32 generated field atmospheres, full-bleed, bevelled, cut by the dashboard
+
+### SHIPPED
+- **Mark:** "a header hero under the nav, wide as the screen, gradient stroke, bevel embossed, cut off halfway, customized for each team with generated field images." 32 ultra-wide (21:9) images generated with Nano Banana 2 — empty stadium field at dusk in each team's palette and city atmosphere; **no logos, no players, no text, no marks** (we own them, and they stay clear of the trademark question the logos raise). Encoded 1800 px progressive JPEG q80, ~200 KB each, `web/hero/{ABBR}.jpg` (LAR aliases LA).
+- `#team-hero`: full-bleed (`100vw`, escapes `main`), 50vh, gradient stroke drawn by a 2 px padded frame (accent → transparent → accent), inset bevel/emboss (light top lip, dark bottom lip, soft drop shadow), rounded bottom, vignette so the type over it stays legible; the dashboard rises over its lower half via a negative margin. Two stacked layers crossfade on team switch after preload; missing file ⇒ gradient fallback (logged, never a broken image). Hidden in Feed view; shorter in Coach mode and on phones.
+
+### VERIFIED ON THE REAL SYSTEM
+- Static test: every team in TEAMS has a hero file in a sane size range; markup + JS wired; 76/76. Visual spot-check of ARI.jpg (dusk field, mountains, lights, no marks). Post-deploy: browser check of hero + crossfade on team switch.
+
+---
+
 ## 2026-09-04 — v0.8.0 · env-gated admin panel: usage, heatmaps, unanswered questions, fans, preferences, health
 
 ### SHIPPED

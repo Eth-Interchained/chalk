@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,4 +38,16 @@ test("client: Feed is a first-class view — tabs in markup, setView wired, ask(
   assert.match(css, /main\.view-home #feedview \{ display: none; \}/);
   assert.match(css, /main\.view-feed #home \{ display: none; \}/);
   assert.match(css, /@keyframes holo/);
+});
+
+test("client: every team in TEAMS has a hero image under web/hero, and the hero markup/JS are wired", () => {
+  const teams = [...src.matchAll(/\b([A-Z]{2,3}): \["[^"]+", "#[0-9A-Fa-f]{6}"\]/g)].map((m) => m[1]);
+  assert.ok(teams.length >= 32, `parsed ${teams.length} teams from TEAMS`);
+  const missing = teams.filter((t) => !existsSync(path.join(here, `../web/hero/${t}.jpg`)));
+  assert.deepEqual(missing, [], `missing hero images: ${missing.join(", ")}`);
+  for (const t of teams) { const sz = statSync(path.join(here, `../web/hero/${t}.jpg`)).size; assert.ok(sz > 60_000 && sz < 600_000, `${t}.jpg ${sz} bytes`); }
+  const html = readFileSync(path.join(here, "../web/index.html"), "utf8");
+  assert.match(html, /id="team-hero"/);
+  assert.match(src, /function setHero\(/);
+  assert.match(src, /setHero\(state\.team\)/);
 });
