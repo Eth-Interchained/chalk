@@ -11,7 +11,7 @@ import { evidenceKey, findObservation, listRecord } from "../src/llm/record.ts";
 import type { EvidencePackage, ObservationRecord } from "../src/llm/explain.ts";
 import { COLL } from "../src/store/collections.ts";
 import { deriveFanId, handleFor } from "../src/fans/identity.ts";
-import { react } from "../src/fans/fans.ts";
+import { react, reactionCounts } from "../src/fans/fans.ts";
 
 const ts = await makeTestStore("record_test");
 const skip: string | false = ts.skip;
@@ -57,7 +57,9 @@ test("record: findObservation returns the latest complete answer for a key; list
   assert.deepEqual(tb.items.map((i) => i.id), ["obs_legacy", "obs_b", "obs_a"]); // newest first by seq; failed/truncated skipped; legacy row included via plan filters
   assert.equal(tb.items[0].team, "TB"); assert.equal(tb.items[0].season, 2025); assert.deepEqual(tb.items[0].statements, []);
   const b = tb.items.find((i) => i.id === "obs_b")!;
-  assert.deepEqual(b.reactions, { like: 0, agree: 1, disagree: 0 });
+  // Fact wall (v0.11.0): the record never reads fan data; the route decorates with reactionCounts.
+  assert.equal(b.reactions, undefined);
+  assert.deepEqual((await reactionCounts(store, COLL.observations, [b.id])).get(b.id), { like: 0, agree: 1, disagree: 0 });
   assert.equal(b.statements[0], "TB Offense Rating: 48/100");
   assert.equal((await listRecord(store, { team: "CIN" })).items.length, 1);
   assert.equal((await listRecord(store, { team: "TB", season: 1999 })).items.length, 0);

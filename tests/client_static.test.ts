@@ -95,7 +95,7 @@ test("coach mode is a real mode: deck markup, loader, ask carries mode, fan-laye
   assert.match(src, /async function loadCoachDeck\(/);
   assert.match(src, /mode: state\.coach \? "coach" : "fan"/);
   const css = readFileSync(path.join(here, "../web/styles.css"), "utf8");
-  assert.match(css, /\.mode-coach #tile-feed, \.mode-coach \[data-rate\], \.mode-coach #take/);
+  assert.match(css, /\.mode-coach #tile-feed, \.mode-coach #take/);
 });
 
 test("every card dropped into #feed goes through showCard (v0.9.2: League / Rate differently posted into the hidden Feed view)", () => {
@@ -103,7 +103,7 @@ test("every card dropped into #feed goes through showCard (v0.9.2: League / Rate
   const direct = js.split("\n").filter((l) => l.includes('$("#feed").prepend(') && !l.includes("function showCard") && !/^\s*\$\("#feed"\)\.prepend\(card\);\s*$/.test(l));
   assert.deepEqual(direct, [], "prepend into #feed outside showCard — the card is invisible from the Dashboard");
   assert.match(js, /function showCard\(card[^)]*\) \{\s*if \(state\.view !== "feed"\) \{ setView\("feed", \{ silent: true \}\); syncUrl\(\); \}/);
-  for (const fn of ["rateDifferently", "showLeague", "rateTile", "openRecorded"]) {
+  for (const fn of ["rateDifferently", "showLeague", "openRecorded"]) {
     const body = js.slice(js.indexOf(`function ${fn}(`));
     assert.ok(body.slice(0, body.indexOf("\n}\n")).includes("showCard("), `${fn} must render via showCard`);
   }
@@ -147,4 +147,16 @@ test("trend follows the headline (v0.10.1): one loader for chips and picker; app
   const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
   const trendRoute = server.slice(server.indexOf("\\/trend$/)) && m === \"GET\") {"), server.indexOf("subjectTrend(lp.rows"));
   assert.ok(trendRoute.includes("definitionSubjectMismatch(def, subject"), "per-subject trend route refuses a definition of another subject");
+});
+
+test("the cut (v0.11.0): fans get knobs that are not facts — no Rate-it sliders, no consensus next to a fact; picks, hype, favorite present; Rate differently is coach-only", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../web/styles.css", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  assert.ok(!js.includes("data-rate") && !js.includes("function rateTile") && !js.includes("loadConsensus") && !js.includes("/api/v1/fans/ratings"), "fan-guesses-a-fact UI is gone");
+  assert.match(css, /body:not\(\.mode-coach\) #rate-differently \{ display: none !important; \}/, "Rate differently is an analyst tool: coach mode only");
+  for (const fn of ["renderPick", "renderHype", "setFavorite", "renderLeaderboard"]) assert.ok(js.includes(`function ${fn}(`), fn);
+  assert.ok(html.includes('id="fav"') && html.includes('id="leaderboard"'));
+  assert.ok(js.includes("/api/v1/fans/picks") && js.includes("/api/v1/fans/hype") && js.includes("/api/v1/fans/favorites"));
+  assert.ok(js.includes("it never touches a CHALK number"), "the wall is stated where the knob is");
 });

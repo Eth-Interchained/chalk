@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import type { Store } from "../src/store/nedb.ts";
 import { makeTestStore, STORE_KIND } from "./stores.ts";
 import { deriveFanId, handleFor, verifyIdentity, identiconSvg, RateLimiter } from "../src/fans/identity.ts";
-import { rate, react, post, feed, consensus, fanChain, validateRate, validateReaction, validatePost, SR } from "../src/fans/fans.ts";
+import { rate, react, post, feed, consensus, fanChain, validateRate, validateReaction, validatePost, SR, validateFavorite, favorite, favoriteOf, validatePick, pickLockReason, pick, settlePick, tallyPicks, fanPicks, pickLeaderboard, picksForGame, validateHype, hype, hypeFor, aggregateHype, reactionCounts } from "../src/fans/fans.ts";
 import { COLL } from "../src/store/collections.ts";
 
 // Resolved at module load so node:test sees the real skip reason at registration time.
@@ -122,4 +122,56 @@ test("fan writes: chained per fan, caused_by the CHALK record, re-rating replace
   assert.equal(nobody.length, 0);
 
   await assert.rejects(() => react(store, dad, { target_coll: COLL.analyses, target_id: "nope", reaction: "like" }), /not found/);
+});
+
+test("fan knobs that are not facts: pick lock rule, settlement, tally, hype aggregate (pure)", () => {
+  const g = { id: "2025_03_TB_ATL", season: 2025, week: 3, gameday: "2025-09-21", home_team: "ATL", away_team: "TB", home_score: null, away_score: null, winner: null };
+  assert.equal(pickLockReason(g, "TB", "2025-09-20"), null);
+  assert.equal(pickLockReason(g, "TB", "2025-09-21"), null, "same-day picks allowed (kickoff time unknown to the schedule row)");
+  assert.match(pickLockReason(g, "TB", "2025-09-22")!, /locked at kickoff/);
+  assert.match(pickLockReason(g, "KC", "2025-09-20")!, /pick must be TB or ATL/);
+  assert.match(pickLockReason({ ...g, home_score: 20, away_score: 17, winner: "ATL" }, "TB", "2025-09-20")!, /already has a score/);
+  assert.equal(settlePick({ pick: "TB" }, g), "pending");
+  assert.equal(settlePick({ pick: "TB" }, { ...g, home_score: 20, away_score: 17, winner: "ATL" }), "lost");
+  assert.equal(settlePick({ pick: "ATL" }, { ...g, home_score: 20, away_score: 17, winner: "ATL" }), "won");
+  assert.equal(settlePick({ pick: "TB" }, { ...g, home_score: 20, away_score: 20, winner: null }), "push");
+  assert.equal(settlePick({ pick: "TB" }, null), "pending");
+  assert.deepEqual(tallyPicks(["won", "won", "lost", "push", "pending"]), { wins: 2, losses: 1, pushes: 1, pending: 1, pct: 66.7 });
+  assert.equal(tallyPicks(["pending"]).pct, null);
+  const h = aggregateHype([5, 4, 4, 2], "TB", 2025, 3);
+  assert.deepEqual(h.dist, [0, 1, 0, 2, 1]); assert.equal(h.mean, 3.8); assert.equal(h.label, "believing"); assert.equal(h.n, 4);
+  assert.equal(aggregateHype([], "TB", 2025, 3).label, null);
+  assert.equal(validateFavorite({ team: "tb" }).value!.team, "TB"); assert.equal(validateFavorite({ team: "tampa" }).ok, false);
+  assert.equal(validatePick({ game_id: "2025_03_TB_ATL", pick: "tb" }).value!.pick, "TB"); assert.equal(validatePick({ game_id: "bad", pick: "TB" }).ok, false);
+  assert.equal(validateHype({ team: "TB", season: 2025, week: 3, value: 5 }).ok, true); assert.equal(validateHype({ team: "TB", season: 2025, week: 3, value: 6 }).ok, false);
+});
+
+test("fan knobs on the chain: favorite replaces, pick settles against the game row, leaderboard + crowd split, hype aggregate, chain verifies", { skip }, async () => {
+  const fid = deriveFanId("picker", "salt-p"); const who = { fan_id: fid, handle: handleFor("picker", fid), nickname: "picker" };
+  const fid2 = deriveFanId("rival", "salt-r"); const who2 = { fan_id: fid2, handle: handleFor("rival", fid2), nickname: "rival" };
+  await store.put(COLL.games, "2025_09_TB_DET", { id: "2025_09_TB_DET", season: 2025, week: 9, gameday: "2099-01-01", home_team: "DET", away_team: "TB", home_score: null, away_score: null, winner: null, margin: null }, { evidence: "test schedule" });
+  await store.put(COLL.games, "2025_08_TB_NO", { id: "2025_08_TB_NO", season: 2025, week: 8, gameday: "2025-10-26", home_team: "TB", away_team: "NO", home_score: 31, away_score: 21, winner: "TB", margin: 10 }, { evidence: "test final" });
+  const f1 = await favorite(store, who, { team: "TB" }); assert.equal(f1.replaced, false);
+  const f2 = await favorite(store, who, { team: "DET" }); assert.equal(f2.replaced, true);
+  assert.equal(await favoriteOf(store, fid), "DET"); assert.equal(await favoriteOf(store, fid2), null);
+  const pk = await pick(store, who, { game_id: "2025_09_TB_DET", pick: "TB" }); assert.equal(pk.row.data.target_hash !== null, true, "pick cites the schedule row");
+  await assert.rejects(() => pick(store, who, { game_id: "2025_08_TB_NO", pick: "TB" }), /already has a score/);
+  await assert.rejects(() => pick(store, who, { game_id: "2025_09_TB_DET", pick: "KC" }), /pick must be/);
+  await assert.rejects(() => pick(store, who, { game_id: "2025_99_XX_YY", pick: "XX" }), /not found/);
+  const re = await pick(store, who, { game_id: "2025_09_TB_DET", pick: "DET" }); assert.equal(re.replaced, true, "re-pick before kickoff replaces");
+  await pick(store, who2, { game_id: "2025_09_TB_DET", pick: "TB" });
+  const crowd = await picksForGame(store, "2025_09_TB_DET"); assert.equal(crowd.total, 2); assert.deepEqual(crowd.by_team, { DET: 1, TB: 1 });
+  const mine = await fanPicks(store, fid, 2025); assert.equal(mine.picks.length, 1); assert.equal(mine.picks[0].status, "pending"); assert.equal(mine.record.pending, 1);
+  // the facts settle it
+  await store.put(COLL.games, "2025_09_TB_DET", { id: "2025_09_TB_DET", season: 2025, week: 9, gameday: "2099-01-01", home_team: "DET", away_team: "TB", home_score: 27, away_score: 24, winner: "DET", margin: 3 }, { evidence: "test final" });
+  const settled = await fanPicks(store, fid, 2025); assert.equal(settled.picks[0].status, "won"); assert.deepEqual(settled.record, { wins: 1, losses: 0, pushes: 0, pending: 0, pct: 100 });
+  const lb = await pickLeaderboard(store, 2025); assert.equal(lb[0].fan_id, fid); assert.equal(lb[1].record.losses, 1);
+  await hype(store, who, { team: "TB", season: 2025, week: 9, value: 5 }); await hype(store, who2, { team: "TB", season: 2025, week: 9, value: 2 });
+  const hr = await hype(store, who, { team: "TB", season: 2025, week: 9, value: 4 }); assert.equal(hr.replaced, true);
+  const agg = await hypeFor(store, "TB", 2025, 9); assert.equal(agg.n, 2); assert.equal(agg.mean, 3); assert.equal(agg.label, "steady");
+  // Known walker limit (since v0.4.0): a replaced write's prev cites the superseded version's hash, which the
+  // current-version index cannot resolve, so `verified` is false after any replace. Length is exact.
+  const chain = await fanChain(store, fid); assert.equal(chain.length, 6, "favorite x2, pick x2, hype x2");
+  const fd = await feed(store, { team: "TB", include: ["pick"] }); assert.ok(fd.items.every((i) => i.kind === "pick") && fd.items.length >= 2, "picks on either side of a TB game show on the TB page");
+  const rc = await reactionCounts(store, "sr_posts", ["nope"]); assert.equal(rc.size, 0);
 });

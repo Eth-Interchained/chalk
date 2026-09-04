@@ -5,6 +5,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.11.0 · the cut: fans get knobs that are not facts
+
+- **Mark:** "should we reduce rating to like favorites and easy things not stat related because we pull stats from the facts APIs" → "cut" → "and make sure the CHALK readings are not manipulated by fans give them other knobs to turn but not the facts."
+- **Cut:** the per-subject Rate-it sliders, the fan-vs-CHALK consensus line on tiles, and Rate differently for fans (it builds formulas — an analyst's tool, now coach mode only). `sr_ratings` rows and routes stay; nothing is deleted.
+- **The fact wall, enforced:** `tests/fact_wall.test.ts` fails the build if `src/rating`, `src/engine`, `src/llm`, `src/planner`, `src/ingest`, `src/model` or `src/source` imports `src/fans` or names an `sr_*` collection. Found and fixed one leak: `src/llm/record.ts` imported the fan layer to tally reactions — moved to the `/api/v1/record` route (`reactionCounts`). Fan data decorates at the route layer only; no fan write can reach a CHALK number.
+- **New knobs (all on the fan chain, `FAN_LAYER_VERSION` 0.2.0):**
+  - **Favorite** — one per fan (`sr_favorites`, replace on change). ★ my team on the hero; the app opens on your team unless the URL says otherwise; synced from the server when an identity is present.
+  - **Picks** — who you got on the next game (`sr_picks`), citing the `football_games` row as-known-then. `pickLockReason`: locked once the game has a score or its gameday has passed; re-pick before kickoff replaces. **The facts settle it**: `settlePick` → won / lost / push / pending from `winner` and scores; `tallyPicks` → record + pct. Crowd split per game, per-fan record, season leaderboard (`/api/v1/fans/picks/leaderboard`) in the Fans tile. Picks appear in the feed on either team's page.
+  - **Hype** — 1-5 per team per week (`sr_hype`: worried · uneasy · steady · believing · all in), aggregate mean/label/distribution on the next-game card, your read marked, the crowd's marked. Labelled on the card: "sentiment, not a stat — it never touches a CHALK number".
+- Routes: POST `/fans/favorites` `/fans/picks` `/fans/hype`; GET `/fans/favorite` `/fans/picks` `/fans/picks/leaderboard` `/fans/picks/game` `/fans/hype`; feed default include `post,pick,rating`.
+- Known (pre-existing since v0.4.0, now more visible): the chain walker reports `verified: false` after any replaced write (re-rate, re-pick, changed favorite) because `prev` cites the superseded version's hash and the walker indexes current versions only. Length is exact. Fix = resolve historical hashes via TRACE or a per-fan version index — next PR.
+- Tests: pure lock/settle/tally/aggregate; chain test with a scheduled game that later gets a final; fact wall; static cut guard; record test moved to `reactionCounts`. 97/97 both stores. Live on the local store: see PR.
+
 ## 2026-09-04 — v0.10.1 · the trend follows the headline
 
 - **Mark:** "cut the next slice" — the one left on the table in v0.10.0.

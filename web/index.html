@@ -71,6 +71,7 @@
             <button class="chip" id="rc-why" data-ask="How does Tampa's third-down rating break down?">Why?</button>
             <button class="chip" id="rate-differently">Rate differently</button>
             <button class="chip" id="show-league">League</button>
+            <button class="chip fav" id="fav" title="Make this your team" aria-pressed="false">☆ my team</button>
           </div>
         </div>
       </div>
@@ -124,6 +125,7 @@
       </section>
       <section class="tile fanfeed" id="tile-feed">
         <div class="tile-h">Fans <span class="muted" id="feed-sub"></span></div>
+        <div id="leaderboard" class="lb"></div>
         <form id="take" class="take" autocomplete="off"><input id="take-text" maxlength="280" placeholder="Your take (no links, 280 max)…" /><button type="submit" class="chip">Post</button></form>
         <div id="feed-body" class="feed-body"></div>
       </section>

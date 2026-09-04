@@ -388,7 +388,9 @@ main.view-feed .team-hero { display: none; }
 .coach-panels .cpanel.pending { opacity: .85; }
 .coach-panels .cpanel.pending .skeleton { height: 12px; margin: 4px 0; }
 @media (max-width: 760px) { .coach-panels { grid-template-columns: 1fr; } }
-.mode-coach #tile-feed, .mode-coach [data-rate], .mode-coach #take, .mode-coach #rate-differently { display: none !important; }
+.mode-coach #tile-feed, .mode-coach #take, .mode-coach #fav { display: none !important; }
+/* Rate differently builds formulas — an analyst's tool, coach mode only. Fans get knobs that are not facts (v0.11.0). */
+body:not(.mode-coach) #rate-differently { display: none !important; }
 .mode-coach .rt .v { font-family: var(--mono); font-size: 30px; }
 .mode-coach .statement { font-family: var(--mono); font-size: 13.5px; }
 .mode-coach .prose { font-size: 14px; color: var(--fg-2); }
@@ -404,3 +406,32 @@ main.view-feed .team-hero { display: none; }
 .rt { cursor: pointer; }
 .rt.headline { outline: 1px solid var(--accent); outline-offset: -1px; }
 .rt.headline .k::after { content: " · headline"; color: var(--accent); letter-spacing: 0; text-transform: none; font-weight: 500; }
+
+/* Fan knobs that are not facts (v0.11.0): allegiance, picks, hype. */
+.fav.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pick { margin-top: 12px; display: grid; gap: 8px; }
+.pick .ph { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .12em; font-size: 11px; color: var(--fg-3); display: flex; justify-content: space-between; gap: 8px; }
+.pick .ph .rec { font-family: var(--mono); letter-spacing: 0; text-transform: none; color: var(--fg-2); }
+.pick .sides { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.pick .side { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-3); color: var(--fg); cursor: pointer; font-family: var(--display); font-weight: 800; font-size: 16px; letter-spacing: .04em; }
+.pick .side img { width: 26px; height: 26px; object-fit: contain; }
+.pick .side:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.pick .side.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.pick .side[disabled] { opacity: .55; cursor: not-allowed; }
+.pick .split { height: 8px; border-radius: 4px; background: var(--bg-3); overflow: hidden; display: flex; }
+.pick .split i { display: block; height: 100%; background: var(--accent); }
+.pick .split i.b { background: color-mix(in srgb, var(--fg-3) 60%, transparent); }
+.pick .note, .hype .note { font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+.hype { margin-top: 10px; display: grid; gap: 6px; }
+.hype .scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.hype .scale button { padding: 6px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-3); color: var(--fg-2); font-family: var(--display); font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; }
+.hype .scale button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.hype .scale button.crowd { box-shadow: inset 0 -3px 0 var(--accent); }
+.lb { display: grid; gap: 4px; margin-bottom: 10px; }
+.lb .row { display: grid; grid-template-columns: 22px 24px 1fr auto; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; padding: 4px 6px; border-radius: 8px; background: var(--bg-3); }
+.lb .row img { width: 20px; height: 20px; border-radius: 6px; }
+.lb .row .h { font-family: var(--body, inherit); font-weight: 600; }
+.lb .row .r { color: var(--fg-2); }
+.lb .row.me { outline: 1px solid var(--accent); outline-offset: -1px; }
+.lb .lbh { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .12em; font-size: 11px; color: var(--fg-3); }
+.fi .t .pk { font-family: var(--display); font-weight: 800; color: var(--accent); }
