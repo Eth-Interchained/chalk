@@ -178,3 +178,14 @@ test("home snapshot stamp carries the code version (v0.12.2): a deploy invalidat
   const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
   assert.ok(server.includes("const next = `${dataStampFrom(ingestEvents, pulseEvents)}:v${CHALK_VERSION}`;"), "stamp = data stamp + code version");
 });
+
+test("home grid (v0.12.3): Last game + What's hurting them stack in one column; Next up spans two at three columns", () => {
+  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../web/styles.css", import.meta.url), "utf8");
+  const stack = html.slice(html.indexOf('<div class="tile-stack"'), html.indexOf('id="tile-next"'));
+  assert.ok(stack.includes('id="tile-last"') && stack.includes('id="tile-weak"'), "both short tiles live in the stack");
+  assert.ok(!stack.includes('id="tile-next"'), "Next up is not in the stack");
+  assert.ok(html.indexOf('id="tile-stack-side"') < html.indexOf('id="tile-next"'), "stack first, Next up beside it");
+  assert.match(css, /\.tile\.next \{ grid-column: span 2; \}/);
+  assert.match(css, /\.tile-stack \{ display: grid;/);
+});

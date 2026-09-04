@@ -5,6 +5,12 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.3 · Last game + What's hurting them share a column
+
+- **Mark:** "lets move 'What's hurting them' card underneath 'Last game' card so they share height because they're both short and the 'Next up' requires more horizontal space" (screenshot: Next up's pick buttons clipped at the tile edge).
+- Markup: the two short tiles are wrapped in `.tile-stack` (one grid cell, stacked); `Next up` spans two columns at the three-column breakpoint and gets `min-width: 0` (the grid-item overflow lesson from v0.9.3, applied before it bites). Pick buttons clip their own overflow instead of the tile's. Two-column and single-column layouts unchanged in order.
+- Tests: static guard. 103/103 both stores. Not browser-verified (Mark's rule).
+
 ## 2026-09-04 — v0.12.2 · the snapshot stamp carries the code version
 
 - **Leftover** (named in v0.9.1 and v0.10.0). The Home snapshot stamp was data-only (`w<seq>:p<seq>`), so a deploy that changed rating math kept serving snapshots computed by the old code until `?fresh=1`. Now the stamp is `w<seq>:p<seq>:v<package version>` — every deploy that bumps the version rebuilds each team's Home exactly once (background, served stale-flagged meanwhile), and do-nothing watch ticks still hold it. No new rebuild loop: the version changes only when the code does.

@@ -239,6 +239,7 @@ form.rd .go { justify-self: start; }
   .ask { left: 50%; transform: translateX(-50%); width: 820px; }
   .grid { grid-template-columns: repeat(3, 1fr); }
   .tile.trend { grid-column: span 2; }
+  .tile.next { grid-column: span 2; }
   .tile.comps { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
@@ -444,3 +445,10 @@ body:not(.mode-coach) #rate-differently { display: none !important; }
 .card.share .cap { margin-top: 10px; background: var(--bg-3); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--fg-2); }
 .card.share .out { font-family: var(--mono); font-size: 11px; color: var(--fg-3); min-height: 14px; }
 .chip.share { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+
+/* Side stack (v0.12.3): Last game over What's hurting them in one column; Next up spans two at 3-col. */
+.tile-stack { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.tile-stack .tile { min-width: 0; }
+.tile.next { min-width: 0; }
+.pick .side { min-width: 0; overflow: hidden; }
+.pick .side span { white-space: nowrap; }
