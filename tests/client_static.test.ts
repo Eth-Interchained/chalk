@@ -30,6 +30,11 @@ test("client css: no bare class selector can hide <body> — the coach-view rule
 test("client: Feed is a first-class view — tabs in markup, setView wired, ask() lands in the feed, poll for other fans' answers", () => {
   const html = readFileSync(path.join(here, "../web/index.html"), "utf8");
   assert.match(html, /data-view="home"/); assert.match(html, /data-view="feed"/);
+  // Tabs sit INSIDE the header bar, not in open space between header and hero.
+  const header = html.slice(html.indexOf("<header"), html.indexOf("</header>"));
+  assert.match(header, /class="views"/, "view tabs must live inside <header>");
+  const afterHeader = html.slice(html.indexOf("</header>"));
+  assert.doesNotMatch(afterHeader, /class="views"/);
   assert.match(html, /id="feedview"/);
   assert.match(src, /function setView\(/);
   assert.match(src, /function pollFeed\(/);

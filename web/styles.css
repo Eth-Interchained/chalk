@@ -25,7 +25,7 @@ a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 .glow { position: fixed; inset: -40% -20% auto -20%; height: 70vh; background: radial-gradient(60% 60% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%); pointer-events: none; z-index: 0; transition: background .6s; }
 
-.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: linear-gradient(180deg, rgba(7,9,13,.98), rgba(7,9,13,.82)); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+.top { position: sticky; top: 0; z-index: 5; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px 16px; background: linear-gradient(180deg, rgba(7,9,13,.98), rgba(7,9,13,.82)); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: baseline; gap: 8px; }
 .mark { font-family: var(--display); font-weight: 900; font-size: 24px; letter-spacing: .02em; color: var(--fg); }
 .mark b { color: var(--accent); font-weight: 900; }
@@ -290,8 +290,9 @@ form.rd .go { justify-self: start; }
 .card.flash { box-shadow: 0 0 0 2px var(--accent); transition: box-shadow .2s; }
 
 /* ---------------- views: Dashboard | Feed ---------------- */
-.views { display: flex; gap: 6px; padding: 6px 4px 10px; position: sticky; top: 58px; z-index: 4; background: linear-gradient(180deg, var(--bg) 70%, transparent); }
-.view-tab { font-family: var(--display); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 13px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg-2); background: var(--bg-2); display: inline-flex; gap: 8px; align-items: center; transition: background .15s, color .15s, border-color .15s; }
+/* Tabs live IN the header bar (brand | tabs | controls) — never in open space above the hero. */
+.views { display: flex; gap: 6px; justify-content: center; align-items: center; min-width: 0; }
+.view-tab { font-family: var(--display); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--fg-2); background: var(--bg-2); display: inline-flex; gap: 8px; align-items: center; transition: background .15s, color .15s, border-color .15s; }
 .view-tab:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .view-tab.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .view-count { font-family: var(--mono); font-size: 11px; letter-spacing: 0; text-transform: none; padding: 1px 7px; border-radius: 999px; background: rgba(0,0,0,.18); }
@@ -328,7 +329,7 @@ main.view-feed #home { display: none; }
 .tbl table { min-width: 100%; white-space: nowrap; }
 
 /* ---------------- team hero (full-bleed, half-screen, bevelled, cut by the dashboard) ---------------- */
-.team-hero { position: relative; width: 100vw; margin-left: calc(50% - 50vw); height: 50vh; min-height: 260px; max-height: 560px; margin-top: -4px; margin-bottom: calc(-25vh + 10px); z-index: 0; pointer-events: none; }
+.team-hero { position: relative; width: 100vw; margin-left: calc(50% - 50vw); height: 50vh; min-height: 260px; max-height: 560px; margin-top: -14px; margin-bottom: calc(-25vh + 10px); z-index: 0; pointer-events: none; }
 .team-hero-frame { position: absolute; inset: 0 0 0 0; overflow: hidden;
   /* gradient stroke: accent -> transparent -> accent, drawn by the frame's padding */
   padding: 2px; background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 85%, white 10%), color-mix(in srgb, var(--accent) 25%, transparent) 40%, color-mix(in srgb, var(--accent) 25%, transparent) 60%, color-mix(in srgb, var(--accent) 85%, white 10%));
@@ -351,3 +352,10 @@ main.view-feed #home { display: none; }
 main.view-feed .team-hero { display: none; }
 .mode-coach .team-hero { height: 36vh; margin-bottom: calc(-18vh + 10px); }
 @media (max-width: 640px) { .team-hero { height: 40vh; margin-bottom: calc(-20vh + 10px); } }
+
+/* header on small screens: brand + controls on row one, tabs on row two, still inside the bar */
+@media (max-width: 760px) {
+  .top { grid-template-columns: 1fr auto; row-gap: 8px; }
+  .views { grid-column: 1 / -1; justify-content: flex-start; }
+  .team-hero { margin-top: -14px; }
+}

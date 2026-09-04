@@ -4,6 +4,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.4 · Dashboard | Feed tabs move into the header bar
+
+### SHIPPED
+- **Mark (with screenshot, hero live on the VPS):** the tabs floated in open space between the header and the hero, pushing the hero down. They now live in the sticky header as its middle column (brand | tabs | controls); the hero starts flush under the bar. Small screens: brand + controls on row one, tabs on row two — still inside the bar. Static test asserts the tabs are inside `<header>` and nowhere after it.
+
+---
+
 ## 2026-09-04 — v0.8.3 · admin moderation: hide / unhide / regenerate — the human in the loop
 
 ### SHIPPED
