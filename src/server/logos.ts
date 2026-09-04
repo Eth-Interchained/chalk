@@ -17,10 +17,11 @@ export interface TeamLogoConfig {
   disclaimer: string;
 }
 
-export const DEFAULT_LOGO_TEMPLATE = "https://a.espncdn.com/i/teamlogos/nfl/500/{abbr}.png";
+/** Vendored: web/logos/{abbr}.png (256 px PNG, lowercase abbreviation). No third-party CDN in the request path. */
+export const DEFAULT_LOGO_TEMPLATE = "/logos/{abbr}.png";
 
-/** nflverse/NFLData abbreviations → ESPN CDN file names where they differ. */
-export const ESPN_ABBR_MAP: Record<string, string> = { WAS: "wsh", LA: "lar", JAX: "jax", LAR: "lar" };
+/** Abbreviation aliases → vendored file name (files use NFLData abbreviations; LAR is the Rams' alternate code). */
+export const ESPN_ABBR_MAP: Record<string, string> = { LAR: "LA" };
 
 export const LOGO_DISCLAIMER =
   "Team names, logos and marks are trademarks of the National Football League and its member clubs, shown here for identification only. " +

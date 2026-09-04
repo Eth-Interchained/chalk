@@ -4,6 +4,16 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.2 · team logos vendored (no hotlinking)
+
+### SHIPPED
+- **Mark:** "we cannot hotlink team logos — vendor them." 32 logos pulled once, normalized to NFLData abbreviations, downsized to 256 px PNG (the UI renders ≤ 112 px), `web/logos/{abbr}.png`, 915 KB total; `lar.png` aliases the Rams. Default template `/logos/{abbr}.png`; no third-party CDN in the request path, no referer leak, no outage we do not own. `CHALK_TEAM_LOGO_URL` still swaps the source; `CHALK_TEAM_LOGOS=0` still turns the feature off. Disclaimer unchanged.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: resolver points every TEAMS entry at an existing vendored file in a sane size range; alias LAR → la.png; 77/77 both stores.
+
+---
+
 ## 2026-09-04 — v0.8.1 · team hero: 32 generated field atmospheres, full-bleed, bevelled, cut by the dashboard
 
 ### SHIPPED
