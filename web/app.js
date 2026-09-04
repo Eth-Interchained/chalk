@@ -305,7 +305,16 @@ async function ask(question) {
   } catch (e) { prose.classList.remove("streaming"); statements.append(el(`<div class="err">${esc(e.message)}</div>`)); }
   function handle(ev, d) {
     if (ev === "plan") { planInfo = d; badges.innerHTML = ""; if (d.plan) badges.append(el(`<span class="badge lime">${esc(d.plan.intent)}</span>`), el(`<span class="badge">${d.plan.source === "model" ? esc(d.plan.model) : "rules"}</span>`)); if (d.fallback_used) badges.append(el(`<span class="badge amber" title="${esc(d.errors.join("; "))}">fallback</span>`)); }
-    else if (ev === "evidence") { evidence = d; for (const s of d.deterministic_statements) statements.append(el(`<div class="statement">${esc(s)}</div>`)); badges.append(el(`<span class="badge">${d.evidence_count} plays</span>`)); const conf = d.summary?.analysis?.confidence || d.summary?.confidence; if (conf === "insufficient" || conf === "low") badges.append(el(`<span class="badge red">${esc(conf)} sample</span>`)); coach.innerHTML = ""; coach.append(renderCoach(d)); }
+    else if (ev === "evidence") {
+      evidence = d;
+      for (const s of d.deterministic_statements) statements.append(el(`<div class="statement">${esc(s)}</div>`));
+      const sample = d.summary?.rating?.sample_size ?? d.summary?.profile?.snaps;
+      badges.append(el(`<span class="badge">${d.evidence_count ? `${d.evidence_count} plays` : sample ? `${sample} snaps · aggregate` : "no play list"}</span>`));
+      const conf = d.summary?.analysis?.confidence || d.summary?.confidence; if (conf === "insufficient" || conf === "low") badges.append(el(`<span class="badge red">${esc(conf)} sample</span>`));
+      coach.innerHTML = "";
+      // A coach-view render bug must never abandon the SSE stream (it did once: subject ratings have no `analysis`).
+      try { coach.append(renderCoach(d)); } catch (e) { console.error("renderCoach failed", d.kind, e); coach.append(el(`<div class="err">coach view failed to render this ${esc(d.kind)} package: ${esc(e.message)} — the statements above are unaffected.</div>`)); }
+    }
     else if (ev === "token") prose.textContent += d.text;
     else if (ev === "observation") { observation = d; prose.classList.remove("streaming"); if (d.id) badges.append(el(`<span class="badge" title="observation ${esc(d.id)}">${esc(d.model)} · ${(d.latency_ms / 1000).toFixed(1)}s</span>`)); if (d.answer_truncated) badges.append(el(`<span class="badge red">truncated</span>`)); if (d.skipped) badges.append(el(`<span class="badge amber">${esc(d.skipped)}</span>`)); }
     else if (ev === "error") { prose.classList.remove("streaming"); statements.append(el(`<div class="err">${esc(d.error)}${d.errors ? ` — ${esc(d.errors.join("; "))}` : ""}</div>`)); }
@@ -313,6 +322,7 @@ async function ask(question) {
   }
   $(".act-evidence", card).onclick = async () => {
     if (!evidence) return;
+    if (!evidence.evidence_ids?.length) { const n = evidence.summary?.rating?.sample_size ?? evidence.summary?.profile?.snaps; drawer.innerHTML = `<div class="muted">This is an aggregate over ${n ?? "the season's"} snaps — no single play list. The component table is in Coach view; Provenance shows the stored rating and its lineage.</div>`; return; }
     drawer.innerHTML = `<div class="muted">loading ${Math.min(evidence.evidence_ids.length, 300)} of ${evidence.evidence_count} plays…</div>`;
     try { const plays = await loadPlays(evidence.evidence_ids); drawer.innerHTML = `<div class="h">Evidence · ${plays.length} of ${evidence.evidence_count} plays${evidence.calculation_ids.length ? ` · calc ${esc(evidence.calculation_ids.join(", "))}` : ""}</div>`; for (const p of plays) drawer.append(playRow(p)); }
     catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -363,13 +373,22 @@ function renderCoach(d) {
   const patterns = (p, title) => { if (!p) return el(`<div class="muted">no formation/personnel context</div>`); const w = el(`<div></div>`); w.append(el(`<div class="h">${esc(title)} · coverage ${fmtPct(p.coverage_pct)} (${p.covered} plays)</div>`)); w.append(kv({ shotgun_pct: fmtPct(p.shotgun_pct), pass_pct_from_shotgun: fmtPct(p.pass_pct_from_shotgun), pass_pct_under_center: fmtPct(p.pass_pct_under_center), motion_pct: fmtPct(p.motion_pct), play_action_pct_of_dropbacks: fmtPct(p.play_action_pct_of_dropbacks), pressure_pct_of_dropbacks: fmtPct(p.pressure_pct_of_dropbacks), success_pct_under_pressure: fmtPct(p.success_pct_under_pressure), success_pct_clean: fmtPct(p.success_pct_clean), avg_defenders_in_box: fmtNum(p.avg_defenders_in_box, 2), no_huddle_pct: fmtPct(p.no_huddle_pct) })); if (p.personnel?.length) w.append(el(`<div class="muted" style="margin-top:6px">personnel: ${esc(p.personnel.map((x) => `${x.group} ${x.pct}%`).join(" · "))}</div>`)); return w; };
   if (d.kind === "third_down" || d.kind === "rating") {
     const a = s.analysis;
-    box.append(el(`<div class="h">Definition</div><div class="muted">${esc(a.definition)}</div>`));
-    box.append(el(`<div class="h">Totals</div>`), kv({ attempts: a.attempts, conversions: a.conversions, conversion_pct: fmtPct(a.conversion_pct), pass_pct: fmtPct(a.pass_pct), epa_per_play: fmtNum(a.epa_per_play, 3), success_pct: fmtPct(a.success_pct), yards_per_play: fmtNum(a.yards_per_play), turnovers: a.turnovers, confidence: a.confidence, games: a.games }));
-    box.append(el(`<div class="h">By distance</div>`), table(a.by_distance, [{ h: "to go", k: "distance" }, { h: "att", k: "attempts", num: 1 }, { h: "conv", k: "conversions", num: 1 }, { h: "conv%", f: (r) => fmtPct(r.conversion_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }, { h: "pass%", f: (r) => fmtPct(r.pass_pct), num: 1 }]));
-    if (a.excluded && Object.keys(a.excluded).length) box.append(el(`<div class="h">Excluded</div>`), kv(a.excluded));
+    if (a) {
+      // Third-down shaped: a situation analysis sits under the rating.
+      box.append(el(`<div class="h">Definition</div><div class="muted">${esc(a.definition)}</div>`));
+      box.append(el(`<div class="h">Totals</div>`), kv({ attempts: a.attempts, conversions: a.conversions, conversion_pct: fmtPct(a.conversion_pct), pass_pct: fmtPct(a.pass_pct), epa_per_play: fmtNum(a.epa_per_play, 3), success_pct: fmtPct(a.success_pct), yards_per_play: fmtNum(a.yards_per_play), turnovers: a.turnovers, confidence: a.confidence, games: a.games }));
+      box.append(el(`<div class="h">By distance</div>`), table(a.by_distance, [{ h: "to go", k: "distance" }, { h: "att", k: "attempts", num: 1 }, { h: "conv", k: "conversions", num: 1 }, { h: "conv%", f: (r) => fmtPct(r.conversion_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }, { h: "pass%", f: (r) => fmtPct(r.pass_pct), num: 1 }]));
+      if (a.excluded && Object.keys(a.excluded).length) box.append(el(`<div class="h">Excluded</div>`), kv(a.excluded));
+    } else if (s.profile) {
+      // Subject rating (offense / defense / red zone / ...): the season profile is the substrate.
+      const p = s.profile;
+      box.append(el(`<div class="h">Season profile · ${p.snaps} snaps · ${p.games} games</div>`), kv({ epa_per_play: fmtNum(p.epa_per_play, 3), success_pct: fmtPct(p.success_pct), explosive_pct: fmtPct(p.explosive_pct), turnover_pct: fmtPct(p.turnover_pct), third_down_pct: fmtPct(p.third_down_pct), red_zone_td_pct: fmtPct(p.red_zone_td_pct), red_zone_snaps: p.red_zone_snaps, points_per_game: fmtNum(p.points_per_game, 1) }));
+    }
+    if (s.formula_notes) box.append(el(`<div class="muted">${esc(s.formula_notes)}</div>`));
     const r = s.rating;
     if (r) box.append(el(`<div class="h">Rating · ${esc(r.definition)} · ${r.score}/100 · #${r.rank} of ${r.of} · ${esc(r.normalization)}</div>`), table(r.components, [{ h: "metric", k: "metric" }, { h: "w", f: (c) => `${c.weight_pct}%`, num: 1 }, { h: "raw", f: (c) => (c.raw_unit === "%" ? fmtPct(c.raw) : fmtNum(c.raw, 3)), num: 1 }, { h: "lg med", f: (c) => (c.raw_unit === "%" ? fmtPct(c.league_median) : fmtNum(c.league_median, 3)), num: 1 }, { h: "pct", f: (c) => (c.percentile === null ? "—" : `${c.percentile}`), num: 1 }, { h: "rank", k: "rank", num: 1 }, { h: "pts", f: (c) => fmtNum(c.points, 1), num: 1 }]));
-    if (s.league_top5) box.append(el(`<div class="h">League top 5</div>`), table(s.league_top5, [{ h: "team", k: "team" }, { h: "score", k: "score", num: 1 }, { h: "n", k: "attempts", num: 1 }]));
+    if (s.league_top5) box.append(el(`<div class="h">League top 5</div>`), table(s.league_top5, [{ h: "team", k: "team" }, { h: "score", k: "score", num: 1 }, { h: "n", f: (x) => x.attempts ?? x.sample_size ?? x.snaps ?? "—", num: 1 }]));
+    if (s.league_bottom3) box.append(el(`<div class="h">League bottom 3</div>`), table(s.league_bottom3, [{ h: "team", k: "team" }, { h: "score", k: "score", num: 1 }, { h: "n", f: (x) => x.attempts ?? x.sample_size ?? x.snaps ?? "—", num: 1 }]));
   } else if (d.kind === "tendency") {
     box.append(el(`<div class="h">${esc(s.situation)}</div><div class="muted">baseline: ${esc(s.baseline)} · n=${s.sample} vs ${s.baseline_sample} · ${esc(s.confidence)}</div>`));
     const rows = Object.keys(s.situation_metrics).map((k) => ({ metric: k, situation: s.situation_metrics[k], baseline: s.baseline_metrics[k] }));
