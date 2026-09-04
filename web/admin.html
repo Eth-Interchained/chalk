@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex,nofollow" />
+<title>CHALK · Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+<link rel="stylesheet" href="/admin.css" />
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/"><span class="mark">SPORTS<b>RATER</b></span><span class="sub">admin · powered by CHALK</span></a>
+  <div class="ctx">
+    <select id="season" class="pill" aria-label="Season"></select>
+    <select id="window" class="pill" aria-label="Window"><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option><option value="365">1 year</option></select>
+    <button id="refresh" class="pill">↻</button>
+    <button id="logout" class="pill" title="Forget the admin token in this tab">lock</button>
+  </div>
+</header>
+<main id="main" class="admin">
+  <section id="gate" class="card gate">
+    <div class="h">Admin token</div>
+    <p class="muted">Env-gated. Paste the value of <code>CHALK_ADMIN_TOKEN</code> from the server. It is kept in this tab's sessionStorage only.</p>
+    <form id="gate-form"><input id="token" type="password" autocomplete="off" placeholder="CHALK_ADMIN_TOKEN" /><button class="chip" type="submit">Unlock</button></form>
+    <div class="err" id="gate-err"></div>
+  </section>
+
+  <section id="panel" hidden>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="agrid">
+      <section class="tile"><div class="tile-h">Asks per day</div><svg id="asks-spark" viewBox="0 0 320 80" preserveAspectRatio="none"></svg><div class="tile-f muted" id="asks-foot"></div></section>
+      <section class="tile"><div class="tile-h">When fans ask <span class="muted">UTC · hour × weekday</span></div><div class="heat" id="heat-asks"></div></section>
+      <section class="tile"><div class="tile-h">Intents</div><div id="intents"></div></section>
+      <section class="tile"><div class="tile-h">Teams asked about</div><div id="teams"></div></section>
+      <section class="tile wide"><div class="tile-h">Team × intent</div><div id="team-intent" class="tbl"></div></section>
+      <section class="tile wide"><div class="tile-h">Top questions</div><div id="top-q"></div></section>
+      <section class="tile wide"><div class="tile-h">Unanswered / unsupported / errored <span class="muted">the tool gaps</span></div><div id="unanswered"></div></section>
+      <section class="tile wide"><div class="tile-h">Planner fallbacks <span class="muted">model plan rejected, rules recovered</span></div><div id="fallbacks"></div></section>
+      <section class="tile"><div class="tile-h">Latency <span class="muted">ms</span></div><div id="latency"></div></section>
+      <section class="tile"><div class="tile-h">Answers</div><div id="answers"></div></section>
+      <section class="tile wide"><div class="tile-h">Most reacted answers</div><div id="most-reacted"></div></section>
+      <section class="tile"><div class="tile-h">Fans</div><div id="fans"></div></section>
+      <section class="tile"><div class="tile-h">Consensus vs CHALK <span class="muted">latest rating per fan</span></div><div id="consensus"></div></section>
+      <section class="tile"><div class="tile-h">Top handles <span class="muted">by chain length</span></div><div id="handles"></div></section>
+      <section class="tile"><div class="tile-h">Fan rating distribution</div><div id="dist"></div></section>
+      <section class="tile"><div class="tile-h">Preferences <span class="muted">anonymous page-view telemetry</span></div><div id="prefs"></div></section>
+      <section class="tile"><div class="tile-h">When fans visit <span class="muted">UTC</span></div><div class="heat" id="heat-views"></div></section>
+      <section class="tile wide"><div class="tile-h">Health</div><div id="health"></div></section>
+    </div>
+    <div class="muted foot" id="gen"></div>
+  </section>
+</main>
+<script src="/admin.js" type="module"></script>
+</body>
+</html>

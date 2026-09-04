@@ -72,6 +72,7 @@ async function boot() {
   $("#feed-refresh").onclick = () => pollFeed(true);
   setView(state.view, { silent: true });
   applyMode(); renderSuggest(); loadHome(); renderWho(); loadFeed(); loadHistory(true);
+  tele("view");
   setInterval(() => { if (state.view === "feed" && document.visibilityState === "visible") pollFeed(); }, 30_000);
   $("#take").onsubmit = async (e) => { e.preventDefault(); const text = $("#take-text").value.trim(); if (!text) return; try { const r = await fanPost("/api/v1/fans/posts", { text, team: state.team }); if (r) { $("#take-text").value = ""; loadFeed(); } } catch (err) { alert(err.message + (err.detail ? ` — ${err.detail.join("; ")}` : "")); } };
   $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (!q) return; $("#q").value = ""; ask(q); };
@@ -139,7 +140,7 @@ function setView(v, opts = {}) {
   main.classList.toggle("view-home", state.view === "home");
   main.classList.toggle("view-feed", state.view === "feed");
   document.querySelectorAll(".view-tab").forEach((b) => b.classList.toggle("on", b.dataset.view === state.view));
-  if (!opts.silent) { syncUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  if (!opts.silent) { syncUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); tele("tab"); }
   if (state.view === "feed") pollFeed();
 }
 // Newest answers since the top of the feed — from this tab or any other fan. Prepends unseen ones with a flash.
@@ -190,6 +191,13 @@ async function loadHistory(reset = false) {
   } finally { hist.loading = false; }
 }
 const historyObserver = new IntersectionObserver((entries) => { for (const en of entries) if (en.isIntersecting) { en.target.remove(); loadHistory(); } }, { rootMargin: "600px" });
+// Anonymous telemetry: team/season/mode/view/viewport bucket (+ handle if you made one). No IP, no user agent — see admin.ts.
+function tele(event) {
+  if (state.meta && state.meta.telemetry === false) return;
+  const w = innerWidth; const viewport = w < 480 ? "xs" : w < 768 ? "sm" : w < 1100 ? "md" : "lg";
+  const body = JSON.stringify({ event, team: state.team, season: state.season, mode: state.coach ? "coach" : "fan", view: state.view, viewport, handle: loadIdentity()?.handle ?? null });
+  try { if (navigator.sendBeacon) navigator.sendBeacon("/api/v1/telemetry", new Blob([body], { type: "application/json" })); else fetch("/api/v1/telemetry", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {}); } catch (e) { console.warn("telemetry", e.message); }
+}
 function renderSiteFoot() {
   const f = $("#site-foot"); if (!f) return;
   const lic = state.meta?.licensing;
@@ -432,7 +440,7 @@ async function ask(question, opts = {}) {
   $(".q", card).textContent = question;
   const badges = $(".badges", card), statements = $(".statements", card), prose = $(".prose", card), coach = $(".coach", card), drawer = $(".drawer", card);
   if (state.view !== "feed") setView("feed", { silent: true });
-  syncUrl();
+  syncUrl(); tele("ask");
   $("#feed").prepend(card);
   card.scrollIntoView({ behavior: "smooth", block: "start" });
   let evidence = null, planInfo = null, observation = null;

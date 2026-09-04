@@ -11,6 +11,7 @@ import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapsho
 import type { RatingDefinition } from "../rating/definitions.ts";
 import { logoConfig } from "./logos.ts";
 import { evidenceKey, findObservation, listRecord } from "../llm/record.ts";
+import { adminOverview, adminAuthorized, validateTelemetry, telemetryDoc, TELEMETRY } from "./admin.ts";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -186,7 +187,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     if (p === "/api/v1/meta") {
       const mt = await meta();
       const defs = await listDefinitions(store);
-      return json(res, 200, { teams: mt.teams, seasons: mt.seasons, defaults: { team: defaultTeam, season: defaultSeason || null }, rating_definitions: defs.map((d) => ({ id: d.id, name: d.name, version: d.version, components: d.components })), licensing: LICENSING, team_logos: logoConfig(), suggested_questions: SUGGESTED });
+      return json(res, 200, { teams: mt.teams, seasons: mt.seasons, defaults: { team: defaultTeam, season: defaultSeason || null }, rating_definitions: defs.map((d) => ({ id: d.id, name: d.name, version: d.version, components: d.components })), licensing: LICENSING, team_logos: logoConfig(), telemetry: process.env.CHALK_TELEMETRY !== "0", suggested_questions: SUGGESTED });
     }
     if (p === "/api/v1/teams") return json(res, 200, { teams: (await meta()).teams });
     if (p === "/api/v1/verify") return json(res, 200, await store.verify());
@@ -389,7 +390,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const body = (await readJson(req)) as Record<string, unknown>;
       const who = verifyIdentity(body.identity ?? body);
       if (!who.ok) throw new HttpError(400, "invalid identity", who.errors);
-      const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() || req.socket.remoteAddress || "?";
+      const ip = clientIp(req);
       const l1 = fanLimiter.take(who.identity!.fan_id);
       const l2 = ipLimiter.take(ip);
       if (!l1.ok || !l2.ok) {
@@ -466,6 +467,31 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     }
     if (p === "/api/v1/ask" && m === "POST") return ask(req, res);
 
+    // ---- admin (env-gated: CHALK_ADMIN_TOKEN unset => these routes do not exist)
+    if (p.startsWith("/api/v1/admin/")) {
+      const tok = process.env.CHALK_ADMIN_TOKEN;
+      if (!tok) throw new HttpError(404, `no route ${m} ${p}`);
+      if (!adminAuthorized(req.headers.authorization, tok)) { log(`admin: rejected token from ${clientIp(req)}`); throw new HttpError(401, "admin token required"); }
+      if (p === "/api/v1/admin/overview" && m === "GET") {
+        const season = q.get("season") ? Number(q.get("season")) : undefined;
+        const windowDays = Math.min(3650, Math.max(1, Number(q.get("window") ?? 30)));
+        return json(res, 200, await adminOverview(store, { season, windowDays }));
+      }
+      throw new HttpError(404, `no admin route ${m} ${p}`);
+    }
+    // ---- anonymous telemetry: one small row per page view / tab / ask. No IP, no UA. Rate limited per address like fan writes.
+    if (p === "/api/v1/telemetry" && m === "POST") {
+      if (process.env.CHALK_TELEMETRY === "0") return json(res, 204, {});
+      const ip = clientIp(req);
+      const lim = ipLimiter.take(ip);
+      if (!lim.ok) throw new HttpError(429, `too many events; retry in ${Math.ceil(lim.retry_after_ms / 1000)}s`);
+      const v = validateTelemetry(await readJson(req));
+      if (!v.ok) throw new HttpError(400, v.errors.join("; "));
+      const doc = telemetryDoc(v.value!);
+      const id = deterministicId("tel", { ...doc, ip_bucket: undefined, nonce: Math.random() });
+      await store.put(TELEMETRY, id, doc as unknown as Record<string, unknown>, { evidence: "telemetry" });
+      return json(res, 202, { ok: true });
+    }
     if (p === "/api/v1/record" && m === "GET") {
       const team = q.get("team")?.toUpperCase() || undefined;
       const season = q.get("season") ? Number(q.get("season")) : undefined;
@@ -620,6 +646,9 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
   async function serveStatic(res: ServerResponse, pathname: string): Promise<void> {
     let rel = pathname === "/" ? "/index.html" : pathname;
+    if (rel === "/admin") rel = "/admin.html";
+    // The admin shell holds no data, but it does not exist unless the server is configured for it.
+    if (/^\/admin(\.html|\.js|\.css)?$/.test(rel) && !process.env.CHALK_ADMIN_TOKEN) throw new HttpError(404, "admin is not enabled (CHALK_ADMIN_TOKEN unset)");
     if (rel.includes("..")) throw new HttpError(400, "bad path");
     let file = path.join(webDir, rel);
     try {
@@ -693,6 +722,10 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   const s = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(s) });
   res.end(s);
+}
+
+function clientIp(req: IncomingMessage): string {
+  return (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() || req.socket.remoteAddress || "?";
 }
 
 function need(q: URLSearchParams, k: string): string {
