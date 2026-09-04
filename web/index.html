@@ -18,6 +18,10 @@
   <a class="brand" href="/">
     <span class="mark">SPORTS<b>RATER</b></span><span class="sub">powered by CHALK</span>
   </a>
+  <nav class="views" aria-label="Views">
+    <button class="view-tab on" data-view="home">Dashboard</button>
+    <button class="view-tab" data-view="feed">Feed <span class="view-count" id="feed-count"></span></button>
+  </nav>
   <div class="ctx">
     <button id="who" class="pill who" title="Your Sports-Rater handle — no account, just math">rate as…</button>
     <select id="team" class="pill" aria-label="Team"></select>
@@ -27,10 +31,6 @@
 </header>
 
 <main id="main" class="view-home">
-  <nav class="views" aria-label="Views">
-    <button class="view-tab on" data-view="home">Dashboard</button>
-    <button class="view-tab" data-view="feed">Feed <span class="view-count" id="feed-count"></span></button>
-  </nav>
   <!-- TEAM HERO: full-bleed generated field atmosphere in the team's palette; the dashboard rises over its lower half -->
   <section class="team-hero" id="team-hero" aria-hidden="true">
     <div class="team-hero-frame">
