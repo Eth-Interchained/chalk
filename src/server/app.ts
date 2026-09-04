@@ -469,8 +469,10 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     if (p === "/api/v1/record" && m === "GET") {
       const team = q.get("team")?.toUpperCase() || undefined;
       const season = q.get("season") ? Number(q.get("season")) : undefined;
-      const r = await listRecord(store, { team, season, limit: Math.min(100, Number(q.get("limit") ?? 30)) });
-      return json(res, 200, { count: r.items.length, seq: r.seq, head: r.head, items: r.items });
+      const beforeSeq = q.get("before") ? Number(q.get("before")) : undefined;
+      if (beforeSeq !== undefined && !Number.isFinite(beforeSeq)) throw new HttpError(400, "before: numeric seq cursor");
+      const r = await listRecord(store, { team, season, limit: Math.min(100, Number(q.get("limit") ?? 30)), beforeSeq });
+      return json(res, 200, { count: r.items.length, total: r.total, next_before: r.next_before, seq: r.seq, head: r.head, items: r.items });
     }
     if ((mm = p.match(/^\/api\/v1\/observations\/([^/]+)$/)) && m === "GET") {
       const row = await store.get(COLL.observations, decodeURIComponent(mm[1]));

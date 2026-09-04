@@ -281,3 +281,8 @@ form.rd .go { justify-self: start; }
 /* identity badges: outlined, so the always-awarded pair reads differently from earned tiers */
 .badge-pill.signature { background: transparent; border-style: dashed; }
 .badge-pill.heel { background: transparent; border-style: dashed; color: var(--fg-2); border-color: var(--line); }
+
+/* history cards */
+.card.skel { animation: none; }
+.card.recorded { border-color: color-mix(in srgb, var(--line) 70%, var(--accent) 30%); }
+.card.flash { box-shadow: 0 0 0 2px var(--accent); transition: box-shadow .2s; }
