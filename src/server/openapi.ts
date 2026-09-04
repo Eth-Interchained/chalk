@@ -14,7 +14,7 @@ export function openapiDocument(baseUrl: string) {
       version: "0.6.0",
       description:
         "Deterministic football analytics over an NEDB provenance store. The database knows. Deterministic code calculates. The model interprets. Provenance proves. Every analysis, rating, play and model observation is addressable and traceable to raw source records.",
-      license: { name: "BUSL-1.1" },
+      license: { name: "GPL-3.0-only" },
     },
     servers: [{ url: baseUrl }],
     tags: [
