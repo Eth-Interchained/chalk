@@ -58,7 +58,7 @@ export function shareCopy(home: HomePayload, headline: string, base: string): Sh
   const traits = [sig ? `Signature: ${trait(sig)}` : null, heel ? `Achilles heel: ${trait(heel)}` : null].filter(Boolean).join(" · ");
   const title = `${team} ${numbers} — Sports-Rater`;
   const text = [`${name} ${home.season} — ${numbers}.`, traits || null, def ? `Formula: ${def}. Deterministic, every number traceable. Provenance proves.` : "Deterministic, every number traceable. Provenance proves.", url].filter(Boolean).join("\n");
-  return { team, team_name: name, season: home.season, headline: hl, label, score, rank, of, title, text, url, image: `${base}/hero/${team}.jpg`, hashtags: ["SportsRater", "CHALK", team, "NFL"] };
+  return { team, team_name: name, season: home.season, headline: hl, label, score, rank, of, title, text, url, image: `${base}/hero/${team}.jpg?v=2`, hashtags: ["SportsRater", "CHALK", team, "NFL"] };
 }
 
 const escAttr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.13 · iPhone link previews: the OG image was served as octet-stream
+
+- **Mark:** "I went to share on iphone and it doesnt load the OG :/"
+- **Root cause (mine, since v0.6.x):** the static MIME map had no `.jpg` (nor `.png`, `.ico`, `.webmanifest`…), so `/og/default.jpg` and every `/hero/*.jpg` went out as `Content-Type: application/octet-stream`. Browsers sniff and render it; Apple's, Facebook's and Twitter's link crawlers refuse an `og:image` that is not declared an image and show no card. The tags were correct — verified as `facebookexternalhit` on `/` and `/s/TB` — only the image response was wrong.
+- **Fix:** MIME entries for jpg/jpeg/png/webp/gif/ico/webmanifest/json/woff2/txt. The OG image URLs carry `?v=2` (default card and team heroes) because Cloudflare had cached the octet-stream response for up to four hours — new URL, fresh fetch. Test guards the MIME map.
+- Verify after deploy: `curl -sI https://sports-rater.com/og/default.jpg?v=2 | grep -i content-type` → `image/jpeg`; then paste the link into iMessage. 113/113 both stores.
+
 ## 2026-09-04 — v0.12.12 · the blank card and the 127.0.0.1 caption
 
 - **Mark:** "nah we broke it further" — screenshot: empty ring, "no 2025 third down rating yet", no pills, no tiles; caption ending in `https://127.0.0.1:4040/s/TB?season=2025`.
