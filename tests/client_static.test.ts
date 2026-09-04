@@ -26,3 +26,16 @@ test("client css: no bare class selector can hide <body> — the coach-view rule
   assert.match(css, /^\.card \.coach \{ display: none/m);
   assert.match(src, /classList\.toggle\("mode-coach"/);
 });
+
+test("client: Feed is a first-class view — tabs in markup, setView wired, ask() lands in the feed, poll for other fans' answers", () => {
+  const html = readFileSync(path.join(here, "../web/index.html"), "utf8");
+  assert.match(html, /data-view="home"/); assert.match(html, /data-view="feed"/);
+  assert.match(html, /id="feedview"/);
+  assert.match(src, /function setView\(/);
+  assert.match(src, /function pollFeed\(/);
+  assert.match(src, /if \(state\.view !== "feed"\) setView\("feed", \{ silent: true \}\);/);
+  const css = readFileSync(path.join(here, "../web/styles.css"), "utf8");
+  assert.match(css, /main\.view-home #feedview \{ display: none; \}/);
+  assert.match(css, /main\.view-feed #home \{ display: none; \}/);
+  assert.match(css, /@keyframes holo/);
+});

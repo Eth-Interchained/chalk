@@ -1,7 +1,7 @@
 // Sports-Rater client — thin, dependency-free. Every number on screen comes
 // from the CHALK API; this file never calculates football metrics (V3 §23).
 const $ = (s, el = document) => el.querySelector(s);
-const state = { team: "TB", season: null, teams: [], seasons: [], coach: false, defs: [], rating: null, meta: null, home: null };
+const state = { team: "TB", season: null, teams: [], seasons: [], coach: false, defs: [], rating: null, meta: null, home: null, view: "home" };
 
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const fmtPct = (v) => (v === null || v === undefined ? "—" : `${v}%`);
@@ -67,7 +67,12 @@ async function boot() {
   const mode = $("#mode");
   const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("mode-coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); };
   mode.onclick = () => { state.coach = !state.coach; syncUrl(); applyMode(); };
+  state.view = url.searchParams.get("view") === "feed" ? "feed" : "home";
+  document.querySelectorAll(".view-tab").forEach((b) => { b.onclick = () => setView(b.dataset.view); });
+  $("#feed-refresh").onclick = () => pollFeed(true);
+  setView(state.view, { silent: true });
   applyMode(); renderSuggest(); loadHome(); renderWho(); loadFeed(); loadHistory(true);
+  setInterval(() => { if (state.view === "feed" && document.visibilityState === "visible") pollFeed(); }, 30_000);
   $("#take").onsubmit = async (e) => { e.preventDefault(); const text = $("#take-text").value.trim(); if (!text) return; try { const r = await fanPost("/api/v1/fans/posts", { text, team: state.team }); if (r) { $("#take-text").value = ""; loadFeed(); } } catch (err) { alert(err.message + (err.detail ? ` — ${err.detail.join("; ")}` : "")); } };
   $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (!q) return; $("#q").value = ""; ask(q); };
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-ask]"); if (b) ask(b.dataset.ask.replaceAll("Tampa", teamName(state.team))); });
@@ -75,7 +80,7 @@ async function boot() {
   $("#show-league").onclick = showLeague;
   const q0 = url.searchParams.get("q"); if (q0) ask(q0);
 }
-function syncUrl() { const u = new URL(location.href); u.searchParams.set("team", state.team); u.searchParams.set("season", state.season); u.searchParams.set("mode", state.coach ? "coach" : "fan"); history.replaceState(null, "", u); }
+function syncUrl() { const u = new URL(location.href); u.searchParams.set("team", state.team); u.searchParams.set("season", state.season); u.searchParams.set("mode", state.coach ? "coach" : "fan"); u.searchParams.set("view", state.view); history.replaceState(null, "", u); }
 function renderSuggest() { const s = $("#suggest"); s.innerHTML = ""; for (const q of state.meta.suggested_questions) s.append(el(`<button class="chip" data-ask="${esc(q)}">${esc(q.replaceAll("Tampa", teamName(state.team)))}</button>`)); }
 
 // ------------------------------------------------------------------ home
@@ -99,6 +104,7 @@ async function loadRecord() {
   } catch (e) { strip.innerHTML = `<div class="err">record unavailable: ${esc(e.message)}</div>`; }
 }
 function openRecorded(it) {
+  if (state.view !== "feed") setView("feed");
   const existing = $(`#feed [data-obs="${CSS.escape(it.id)}"]`);
   if (existing) { existing.scrollIntoView({ behavior: "smooth", block: "start" }); existing.classList.add("flash"); setTimeout(() => existing.classList.remove("flash"), 1200); return; }
   const card = recordedCard(it);
@@ -126,6 +132,33 @@ function recordedCard(it) {
   return card;
 }
 
+// ---- Views: Dashboard (team home) | Feed (every completion, live asks on top).
+function setView(v, opts = {}) {
+  state.view = v === "feed" ? "feed" : "home";
+  const main = $("#main");
+  main.classList.toggle("view-home", state.view === "home");
+  main.classList.toggle("view-feed", state.view === "feed");
+  document.querySelectorAll(".view-tab").forEach((b) => b.classList.toggle("on", b.dataset.view === state.view));
+  if (!opts.silent) { syncUrl(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  if (state.view === "feed") pollFeed();
+}
+// Newest answers since the top of the feed — from this tab or any other fan. Prepends unseen ones with a flash.
+let feedPolling = false;
+async function pollFeed(force = false) {
+  if (feedPolling) return; feedPolling = true;
+  try {
+    const r = await api(`/api/v1/record?team=${state.team}&season=${state.season}&limit=10`);
+    $("#feed-count").textContent = r.total ? String(r.total) : "";
+    const feed = $("#feed");
+    const fresh = r.items.filter((it) => !$(`#feed [data-obs="${CSS.escape(it.id)}"]`)).reverse();
+    for (const it of fresh) { const c = recordedCard(it); c.classList.add("recorded"); if (force || fresh.length) c.classList.add("flash"); feed.prepend(c); setTimeout(() => c.classList.remove("flash"), 1500); }
+    $("#history-empty")?.remove();
+    if (fresh.length) $("#feed-sub").textContent = `${fresh.length} new · ${r.total} answers on record`;
+    else if (r.total) $("#feed-sub").textContent = `${r.total} answers on record · updates every 30s`;
+  } catch (e) { $("#feed-sub").textContent = `feed refresh failed: ${e.message}`; }
+  finally { feedPolling = false; }
+}
+
 // ---- History: the feed IS the record. Every completion for this team/season,
 // newest first, paginated by seq with infinite scroll. Live asks prepend.
 const hist = { before: null, loading: false, done: false, token: 0 };
@@ -147,6 +180,8 @@ async function loadHistory(reset = false) {
     for (const it of r.items) { const c = recordedCard(it); c.classList.add("recorded"); if (!$(`#feed [data-obs="${CSS.escape(it.id)}"]`)) feed.append(c); }
     hist.before = r.next_before;
     hist.done = r.next_before === null;
+    $("#feed-count").textContent = r.total ? String(r.total) : "";
+    $("#feed-sub").textContent = r.total ? `${r.total} answers on record · updates every 30s` : "nothing asked yet — every answer is kept and shows up here for the next fan";
     if (!feed.children.length) feed.append(el(`<div class="card muted" id="history-empty">Nothing asked about ${esc(teamName(state.team))} ${state.season} yet — every answer you get here is kept, with its evidence, and shows up for the next fan.</div>`));
     if (!hist.done) { const sn = el(`<div id="history-sentinel" class="muted" style="text-align:center;padding:10px">${r.total - $$("#feed .recorded").length} older answers · scroll for more</div>`); feed.append(sn); historyObserver.observe(sn); }
   } catch (e) {
@@ -396,6 +431,8 @@ async function ask(question, opts = {}) {
   card.classList.toggle("coach-on", state.coach);
   $(".q", card).textContent = question;
   const badges = $(".badges", card), statements = $(".statements", card), prose = $(".prose", card), coach = $(".coach", card), drawer = $(".drawer", card);
+  if (state.view !== "feed") setView("feed", { silent: true });
+  syncUrl();
   $("#feed").prepend(card);
   card.scrollIntoView({ behavior: "smooth", block: "start" });
   let evidence = null, planInfo = null, observation = null;

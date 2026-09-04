@@ -26,7 +26,11 @@
   </div>
 </header>
 
-<main id="main">
+<main id="main" class="view-home">
+  <nav class="views" aria-label="Views">
+    <button class="view-tab on" data-view="home">Dashboard</button>
+    <button class="view-tab" data-view="feed">Feed <span class="view-count" id="feed-count"></span></button>
+  </nav>
   <!-- HOME -->
   <section id="home" class="home">
     <div class="hero" id="hero">
@@ -100,8 +104,15 @@
     </div>
   </section>
 
-  <section class="suggest" id="suggest"></section>
-  <section id="feed" class="feed"></section>
+  <!-- FEED: every completion, newest first, live asks land on top -->
+  <section id="feedview" class="feedview">
+    <div class="feed-head">
+      <div class="tile-h">Live feed <span class="muted" id="feed-sub">every answer CHALK has given about this team, newest first</span></div>
+      <button class="chip" id="feed-refresh" title="Pull the newest answers now">↻ refresh</button>
+    </div>
+    <section class="suggest" id="suggest"></section>
+    <section id="feed" class="feed"></section>
+  </section>
   <footer class="site-foot" id="site-foot"></footer>
 </main>
 
