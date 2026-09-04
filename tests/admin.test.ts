@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import type { Store } from "../src/store/nedb.ts";
 import { makeTestStore, STORE_KIND } from "./stores.ts";
 import { adminOverview, adminAuthorized, validateTelemetry, telemetryDoc, TELEMETRY } from "../src/server/admin.ts";
+import { setHidden, hiddenSet, isHidden, listModeration, validateModeration } from "../src/server/moderation.ts";
+import { findObservation, listRecord, evidenceKey } from "../src/llm/record.ts";
+import { feed, post, SR } from "../src/fans/fans.ts";
 import { COLL } from "../src/store/collections.ts";
 import { deriveFanId, handleFor } from "../src/fans/identity.ts";
 import { rate, react } from "../src/fans/fans.ts";
@@ -75,4 +78,34 @@ test("adminOverview: aggregates asks, answers, fans, telemetry and health from t
   assert.equal(o.preferences.viewports[0].key, "lg");
   assert.ok(o.health.seq > 0 && o.health.head.length > 10);
   assert.ok(o.health.audit && o.health.audit.season === 2025);
+});
+
+test("moderation: hide drops an answer from the record, the feed and serve-from-record; unhide restores; every decision is a provenance row", { skip }, async () => {
+  assert.equal(validateModeration({ coll: "users", id: "x" }).ok, false);
+  assert.equal(validateModeration({ coll: "football_observations", id: "obs1", reason: "wrong unit" }).ok, true);
+  const key = evidenceKey({ intent: "opponent_report", filters: { team: "TB", opponent: "CIN", side: "defense" } }, { kind: "opponent_report", summary: { x: 1 }, calculation_ids: ["c"], calculation_hashes: ["h"], evidence_ids: [] });
+  await store.put(COLL.observations, "obs_wrong", { question: "What should I know about the CIN defense?", intent: "opponent_report", team: "TB", season: 2025, evidence_key: key, statements: ["CIN offense, 2025 season: 1049 snaps"], model: "GLM-4-32B", answer: "The CIN offense ...", answer_truncated: false, error: null, created_at: new Date().toISOString(), query_plan: { id: "p", intent: "opponent_report", filters: { team: "TB", opponent: "CIN" }, source: "rules" }, evidence_ids: [], evidence_count: 1049, calculation_ids: ["c"], raw_output: "", finish_reason: "stop", latency_ms: 7000, model_revision: null, prompt_version: "0.4.1" });
+  assert.equal((await findObservation(store, key))?._id, "obs_wrong");
+  assert.ok((await listRecord(store, { team: "TB", season: 2025 })).items.some((i) => i.id === "obs_wrong"));
+
+  const row = await setHidden(store, COLL.observations, "obs_wrong", true, "described the offense, question was about the defense");
+  assert.equal(row.data.hidden, true); assert.equal(row.data.target_hash?.length, 64);
+  assert.equal(await isHidden(store, COLL.observations, "obs_wrong"), true);
+  assert.ok((await hiddenSet(store)).has(`${COLL.observations}:obs_wrong`));
+  assert.equal(await findObservation(store, key), null); // never served from the record again
+  assert.ok(!(await listRecord(store, { team: "TB", season: 2025 })).items.some((i) => i.id === "obs_wrong"));
+  const log = await listModeration(store);
+  assert.equal(log[0].id, "obs_wrong"); assert.match(log[0].reason, /offense/);
+
+  await setHidden(store, COLL.observations, "obs_wrong", false, "");
+  assert.equal(await isHidden(store, COLL.observations, "obs_wrong"), false);
+  assert.equal((await findObservation(store, key))?._id, "obs_wrong");
+  assert.equal((await listModeration(store)).length, 1); // same id, new version — one row, two versions
+
+  const dad = { fan_id: deriveFanId("dad", "m1"), handle: handleFor("dad", deriveFanId("dad", "m1")), nickname: "dad" };
+  const p1 = await post(store, dad, { text: "This take gets pulled.", team: "TB", game_id: null, target_coll: null, target_id: null });
+  assert.ok((await feed(store, { team: "TB" })).items.some((i) => i.id === p1._id));
+  await setHidden(store, SR.posts, p1._id, true, "spam");
+  assert.ok(!(await feed(store, { team: "TB" })).items.some((i) => i.id === p1._id));
+  await assert.rejects(() => setHidden(store, COLL.observations, "nope", true, ""), /not found/);
 });

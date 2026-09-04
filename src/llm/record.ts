@@ -20,6 +20,7 @@ import type { EvidencePackage, ObservationRecord } from "./explain.ts";
 import type { QueryPlan } from "./planner.ts";
 import { PROMPT_VERSION } from "./prompts.ts";
 import { SR, type FanReaction, type ReactionKind } from "../fans/fans.ts";
+import { hiddenSet } from "../server/moderation.ts";
 
 export const RECORD_VERSION = "1";
 
@@ -39,8 +40,9 @@ export function evidenceKey(plan: Pick<QueryPlan, "intent" | "filters">, pkg: Ev
 
 /** Latest stored, complete answer for this key (null if none, or only failed/truncated ones exist). */
 export async function findObservation(store: Store, key: string): Promise<NedbRow<ObservationRecord> | null> {
-  const rows = await store.query<ObservationRecord>(`FROM ${COLL.observations} WHERE evidence_key = ${nqlStr(key)}`);
-  const good = rows.filter((r) => r.data.answer && !r.data.error && !r.data.answer_truncated).sort((a, b) => b._seq - a._seq);
+  const [rows, hidden] = await Promise.all([store.query<ObservationRecord>(`FROM ${COLL.observations} WHERE evidence_key = ${nqlStr(key)}`), hiddenSet(store)]);
+  // A hidden answer is never served from the record — an admin pulled it for a reason no metric could see.
+  const good = rows.filter((r) => r.data.answer && !r.data.error && !r.data.answer_truncated && !hidden.has(`${COLL.observations}:${r._id}`)).sort((a, b) => b._seq - a._seq);
   return good[0] ?? null;
 }
 
@@ -73,8 +75,8 @@ export async function listRecord(store: Store, opts: { team?: string; season?: n
   // from the stored query plan so the record is complete from day one.
   const teamOf = (o: ObservationRecord): string | null => o.team ?? (typeof (o.query_plan?.filters as { team?: unknown })?.team === "string" ? String((o.query_plan.filters as { team: string }).team).toUpperCase() : null);
   const seasonOf = (o: ObservationRecord): number | null => o.season ?? (typeof (o.query_plan?.filters as { season?: unknown })?.season === "number" ? (o.query_plan.filters as { season: number }).season : null);
-  const r = await store.queryAt<ObservationRecord>(`FROM ${COLL.observations}`);
-  let rows = r.rows.filter((x) => x.data.answer && !x.data.error && !x.data.answer_truncated);
+  const [r, hidden] = await Promise.all([store.queryAt<ObservationRecord>(`FROM ${COLL.observations}`), hiddenSet(store)]);
+  let rows = r.rows.filter((x) => x.data.answer && !x.data.error && !x.data.answer_truncated && !hidden.has(`${COLL.observations}:${x._id}`));
   if (opts.team) rows = rows.filter((x) => teamOf(x.data) === opts.team);
   if (opts.season !== undefined) rows = rows.filter((x) => seasonOf(x.data) === opts.season);
   const total = rows.length;

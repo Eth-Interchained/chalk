@@ -12,6 +12,8 @@ import type { RatingDefinition } from "../rating/definitions.ts";
 import { logoConfig } from "./logos.ts";
 import { evidenceKey, findObservation, listRecord } from "../llm/record.ts";
 import { adminOverview, adminAuthorized, validateTelemetry, telemetryDoc, TELEMETRY } from "./admin.ts";
+import { setHidden, listModeration, hiddenSet, validateModeration } from "./moderation.ts";
+import type { ObservationRecord } from "../llm/explain.ts";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,7 +47,7 @@ import { evaluateBadges, BADGE_DEFINITIONS } from "../rating/badges.ts";
 import { opponentReport, summarizeOpponentReport } from "../engine/opponent.ts";
 import { analyzeDeviation } from "../engine/deviation.ts";
 import { identiconSvg, RateLimiter, verifyIdentity } from "../fans/identity.ts";
-import { consensus, fanChain, feed, post, rate, react, validatePost, validateRate, validateReaction } from "../fans/fans.ts";
+import { consensus, fanChain, feed, post, rate, react, validatePost, validateRate, validateReaction, SR } from "../fans/fans.ts";
 
 // Fan-layer anti-spam: 20 writes burst per handle, refilling 1 per 10s; 60 per address, 1 per 5s.
 const fanLimiter = new RateLimiter(20, 1 / 10_000);
@@ -472,6 +474,47 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const tok = process.env.CHALK_ADMIN_TOKEN;
       if (!tok) throw new HttpError(404, `no route ${m} ${p}`);
       if (!adminAuthorized(req.headers.authorization, tok)) { log(`admin: rejected token from ${clientIp(req)}`); throw new HttpError(401, "admin token required"); }
+      // Moderation: what is on the feed (incl. hidden state), hide/unhide, regenerate.
+      if (p === "/api/v1/admin/feed" && m === "GET") {
+        const limit = Math.min(200, Number(q.get("limit") ?? 50));
+        const [obs, posts, hidden] = await Promise.all([store.query<ObservationRecord>(`FROM ${COLL.observations}`), store.query<Record<string, unknown>>(`FROM ${SR.posts}`), hiddenSet(store)]);
+        const answers = obs.map((r) => ({ coll: COLL.observations, id: r._id, seq: r._seq, hash: r._hash, created_at: r.data.created_at, question: r.data.question, intent: r.data.intent, team: r.data.team ?? null, model: r.data.model, answer: (r.data.answer ?? "").slice(0, 600), statements: r.data.statements ?? [], error: r.data.error, truncated: r.data.answer_truncated, hidden: hidden.has(`${COLL.observations}:${r._id}`) })).sort((a, b) => b.seq - a.seq).slice(0, limit);
+        const takes = posts.map((r) => ({ coll: SR.posts, id: r._id, seq: r._seq, hash: r._hash, created_at: String(r.data.created_at), handle: String(r.data.handle), text: String(r.data.text), team: (r.data.team as string | null) ?? null, hidden: hidden.has(`${SR.posts}:${r._id}`) })).sort((a, b) => b.seq - a.seq).slice(0, limit);
+        return json(res, 200, { answers, takes, hidden: hidden.size, moderation: await listModeration(store, 100) });
+      }
+      if ((p === "/api/v1/admin/hide" || p === "/api/v1/admin/unhide") && m === "POST") {
+        const v = validateModeration(await readJson(req));
+        if (!v.ok) throw new HttpError(400, v.errors.join("; "));
+        const hide = p.endsWith("/hide");
+        const row = await setHidden(store, v.value!.coll, v.value!.id, hide, v.value!.reason);
+        log(`admin: ${hide ? "hid" : "restored"} ${v.value!.coll}/${v.value!.id}${v.value!.reason ? ` — ${v.value!.reason}` : ""}`);
+        store.invalidateCache();
+        return json(res, 200, { ok: true, hidden: hide, moderation_hash: row._hash, coll: v.value!.coll, id: v.value!.id });
+      }
+      if (p === "/api/v1/admin/regenerate" && m === "POST") {
+        const body = (await readJson(req)) as { id?: string; reason?: string };
+        if (!body.id) throw new HttpError(400, "id required (football_observations id)");
+        if (!llm || !llm.key) throw new HttpError(503, "regenerate needs the LLM (CHALK_LLM_KEY unset)");
+        const old = await store.get<ObservationRecord>(COLL.observations, body.id);
+        if (!old) throw new HttpError(404, `observation ${body.id} not found`);
+        const team = old.data.team ?? (old.data.query_plan?.filters as { team?: string })?.team ?? defaultTeam;
+        const season = old.data.season ?? (old.data.query_plan?.filters as { season?: number })?.season ?? defaultSeason;
+        const t0 = Date.now();
+        const ctx = await planContext({ team, season });
+        const planned = await planQuestion(old.data.question, ctx, llm, store, log);
+        if (!planned.ok || !planned.plan) throw new HttpError(422, `could not re-plan: ${planned.errors.join("; ")}`);
+        const exec = await execute(planned.plan, { store, log });
+        let fresh: ObservationRecord | null = null; let freshHash: string | null = null; let llmError: string | null = null;
+        for await (const ev of explain(llm, store, old.data.question, planned.plan, exec.package, { team, season }, log)) {
+          if (ev.type === "observation") { fresh = ev.observation; freshHash = ev.hash; }
+          else if (ev.type === "error") llmError = ev.error;
+        }
+        if (!fresh || !fresh.answer) throw new HttpError(502, `regeneration produced no stored answer${llmError ? `: ${llmError}` : ""}`);
+        await setHidden(store, COLL.observations, body.id, true, `${body.reason ? body.reason + " — " : ""}regenerated → ${fresh.id}`);
+        store.invalidateCache();
+        log(`admin: regenerated ${body.id} → ${fresh.id} (${planned.plan.intent}, ${Date.now() - t0}ms)`);
+        return json(res, 200, { ok: true, old_id: body.id, new_id: fresh.id, new_hash: freshHash, intent: planned.plan.intent, plan_source: planned.plan.source, plan_fallback: planned.fallback_used, statements: exec.package.deterministic_statements ?? [], answer: fresh.answer, latency_ms: Date.now() - t0 });
+      }
       if (p === "/api/v1/admin/overview" && m === "GET") {
         const season = q.get("season") ? Number(q.get("season")) : undefined;
         const windowDays = Math.min(3650, Math.max(1, Number(q.get("window") ?? 30)));

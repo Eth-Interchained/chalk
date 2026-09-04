@@ -4,6 +4,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.3 · admin moderation: hide / unhide / regenerate — the human in the loop
+
+### SHIPPED
+- **Mark:** "admin should be able to regenerate or delete posts from the feed … if something errored we don't know how to programmatically determine that; the admin can see it." Today's CIN-defense answer that described the offense is the canonical case: plan ok, model answered, no error, no truncation — and wrong. Worse, the Record would have served it to every fan whose inputs matched, forever.
+- `src/server/moderation.ts`: `football_moderation` rows (`mod:<coll>:<id>`, caused_by the target's hash, with reason/by/time). **Hide** removes an item from the Feed, the Record strip, the fan feed AND serve-from-record (`findObservation` / `listRecord` / `feed` consult the hidden set). **Unhide** writes a new version with `hidden:false`. Nothing is deleted; the chain and the evidence of what was said and why it was pulled both stay. Applies to CHALK answers, fan takes and fan ratings.
+- **Regenerate** (`POST /api/v1/admin/regenerate {id, reason}`): re-plans, re-executes and re-explains the stored question live (non-streaming), stores the new observation beside the old, hides the old with reason `regenerated → <new id>`. Returns the new plan's intent/source/fallback flag, statements and answer so the admin can judge it on the spot.
+- Admin panel: "Feed moderation" tile — Answers | Fan takes | Moderation log, show-hidden toggle, per-item reason field, Hide/Unhide, Regenerate, raw link. `GET /api/v1/admin/feed` lists recent answers/takes with hidden state + the log.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: hide → gone from record/feed/serve-from-record; unhide → back; one moderation row with two versions; fan take hide; validation; missing target rejected. 78/78 both stores. Live: hide/unhide round trip on a local serve; regenerate needs the LLM key (VPS).
+
+---
+
 ## 2026-09-04 — v0.8.2 · team logos vendored (no hotlinking)
 
 ### SHIPPED

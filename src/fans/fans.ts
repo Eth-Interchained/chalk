@@ -18,6 +18,7 @@ import { deterministicId } from "../store/hash.ts";
 import { nqlStr, type NedbRow } from "../store/nedb.ts";
 import type { Store } from "../store/nedb.ts";
 import type { FanIdentity } from "./identity.ts";
+import { hiddenSet } from "../server/moderation.ts";
 
 export const SR = {
   ratings: "sr_ratings",
@@ -218,15 +219,16 @@ export async function feed(store: Store, opts: { team?: string; limit?: number; 
   const include = new Set(opts.include ?? ["post", "rating"]);
   const items: FeedItem[] = [];
   let seq = 0, head = "";
+  const hidden = await hiddenSet(store);
   if (include.has("post")) {
     const r = await store.queryAt<FanPost>(`FROM ${SR.posts}`);
     seq = Math.max(seq, r.seq); head = r.head || head;
-    for (const x of r.rows) items.push({ kind: "post", id: x._id, hash: x._hash, seq: x._seq, fan_id: x.data.fan_id, handle: x.data.handle, created_at: x.data.created_at, chain_index: x.data.chain_index, prev: x.data.prev, team: x.data.team, game_id: x.data.game_id, text: x.data.text, target_coll: x.data.target_coll, target_id: x.data.target_id });
+    for (const x of r.rows.filter((p) => !hidden.has(`${SR.posts}:${p._id}`))) items.push({ kind: "post", id: x._id, hash: x._hash, seq: x._seq, fan_id: x.data.fan_id, handle: x.data.handle, created_at: x.data.created_at, chain_index: x.data.chain_index, prev: x.data.prev, team: x.data.team, game_id: x.data.game_id, text: x.data.text, target_coll: x.data.target_coll, target_id: x.data.target_id });
   }
   if (include.has("rating")) {
     const r = await store.queryAt<FanRating>(`FROM ${SR.ratings}`);
     seq = Math.max(seq, r.seq); head = r.head || head;
-    for (const x of r.rows) items.push({ kind: "rating", id: x._id, hash: x._hash, seq: x._seq, fan_id: x.data.fan_id, handle: x.data.handle, created_at: x.data.created_at, chain_index: x.data.chain_index, prev: x.data.prev, team: x.data.team, subject: x.data.subject, score: x.data.score, chalk_score: x.data.chalk_score, target_coll: x.data.target_coll, target_id: x.data.target_id });
+    for (const x of r.rows.filter((p) => !hidden.has(`${SR.ratings}:${p._id}`))) items.push({ kind: "rating", id: x._id, hash: x._hash, seq: x._seq, fan_id: x.data.fan_id, handle: x.data.handle, created_at: x.data.created_at, chain_index: x.data.chain_index, prev: x.data.prev, team: x.data.team, subject: x.data.subject, score: x.data.score, chalk_score: x.data.chalk_score, target_coll: x.data.target_coll, target_id: x.data.target_id });
   }
   if (include.has("reaction")) {
     const r = await store.queryAt<FanReaction>(`FROM ${SR.reactions}`);
