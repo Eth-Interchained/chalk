@@ -375,8 +375,18 @@ main.view-feed .team-hero { display: none; }
 .coach-deck { margin: 6px 0 12px; }
 .coach-deck .tile-h { padding: 0 4px 8px; }
 .coach-panels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.coach-panels .cpanel { min-height: 0; padding: 12px; }
+/* min-width: 0 — a grid item defaults to min-width:auto and grows to its table's intrinsic width, so two
+   wide panels overlapped each other and the deck edge (v0.9.3). With it, .tbl's overflow-x: auto does its job. */
+.coach-panels .cpanel { min-height: 0; min-width: 0; padding: 12px; display: grid; gap: 8px; align-content: start; }
+.coach-panels .cpanel .tbl { max-width: 100%; }
 .coach-panels .cpanel .tbl table { font-size: 12px; }
+.coach-panels .cpanel .tbl th, .coach-panels .cpanel .tbl td { padding: 6px 8px; }
+.coach-panels .cpanel .ph { display: grid; gap: 2px; }
+.coach-panels .cpanel .ph .t { font-family: var(--display); font-weight: 800; text-transform: uppercase; letter-spacing: .1em; font-size: 13px; color: var(--fg); }
+.coach-panels .cpanel .ph .t b { color: var(--accent); font-family: var(--mono); font-weight: 600; letter-spacing: 0; }
+.coach-panels .cpanel .ph .s { font-family: var(--mono); font-size: 11px; color: var(--fg-3); letter-spacing: 0; text-transform: none; white-space: normal; }
+.coach-panels .cpanel.pending { opacity: .85; }
+.coach-panels .cpanel.pending .skeleton { height: 12px; margin: 4px 0; }
 @media (max-width: 760px) { .coach-panels { grid-template-columns: 1fr; } }
 .mode-coach #tile-feed, .mode-coach [data-rate], .mode-coach #take, .mode-coach #rate-differently { display: none !important; }
 .mode-coach .rt .v { font-family: var(--mono); font-size: 30px; }
