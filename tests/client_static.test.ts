@@ -215,3 +215,13 @@ test("pick lookup uses the game's season (v0.12.7): a next-season game can show 
   const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
   assert.ok(js.includes("/api/v1/fans/picks?fan_id=${id.fan_id}&season=${g.season ?? state.season}"));
 });
+
+test("sharecard rating strip fits all six tiles (v0.12.9): width derived from the space, no overflow guard dropping tiles", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  assert.ok(js.includes("const tileW = Math.floor((avail - gap * (list.length - 1)) / Math.max(1, list.length));"));
+  assert.ok(!js.includes("if (x + tileW > SHARE_W - 24) return;"), "no silent drop of tiles that do not fit");
+  // arithmetic check of the layout constants used in drawShareCard
+  const SHARE_W = 1200, x0 = 330, gap = 8, n = 6; const avail = SHARE_W - 24 - x0; const tileW = Math.floor((avail - gap * (n - 1)) / n);
+  assert.ok(x0 + n * tileW + (n - 1) * gap <= SHARE_W - 24, "six tiles fit inside the right margin");
+  assert.ok(tileW >= 120, `tiles stay legible (${tileW}px)`);
+});

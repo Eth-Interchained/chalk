@@ -1,6 +1,6 @@
 {
   "name": "chalk-engine",
-  "version": "0.12.8",
+  "version": "0.12.9",
   "description": "CHALK \u2014 local-first football intelligence engine behind sports-rater.com. The database knows. Deterministic code calculates. The model interprets. Provenance proves.",
   "type": "module",
   "license": "BUSL-1.1",

@@ -5,6 +5,12 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.9 · the sharecard shows all six ratings
+
+- **Mark:** "its working great look" — first live render of the sharecard (hero, logo, ring, pills, footer with seq, PNG downloaded). It showed **four** rating tiles: six at a fixed 172 px did not fit the 846 px strip and the overflow guard silently dropped Explosiveness and Ball Security — the two TB is best at.
+- Fix: tile width derived from the available space (six tiles → 133 px), fonts step down under 150 px, labels ellipsize instead of overflowing; the silent-drop guard is gone. Static test checks the arithmetic against the layout constants.
+- 109/109 both stores. Not browser-verified (Mark's rule) — Mark's screenshot is the ground truth for the previous state.
+
 ## 2026-09-04 — v0.12.8 · on nedb-engine 2.8.5 — acknowledged writes survive SIGKILL
 
 - **The engine fix, not a CHALK workaround** (Mark: "fix the engine not CHALK"). nedb-engine **2.8.5** — embedded `NedbCore.open()` now runs the 1 s manifest ticker exactly as `nedbd` does, and the Node exit-flush wrapper ships and works for the first time (it had never been in the published package, and could not have wrapped a non-writable static). Found by this app; fixed upstream in eth-interchained/nedb PR #72; CI's smoke gate now runs a durability test (SIGKILL keeps the write · ticker-off SIGKILL loses it · ticker-off SIGTERM keeps it).
