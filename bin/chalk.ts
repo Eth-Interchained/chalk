@@ -17,6 +17,7 @@ import path from "node:path";
 import { ChalkStore, type Store, DEFAULT_NEDB_URL, DEFAULT_DB, ensureNedbd } from "../src/store/nedb.ts";
 import { EmbeddedStore } from "../src/store/embedded.ts";
 import { NFLDataSource } from "../src/source/nfldata.ts";
+import { resolveWatchDeep } from "../src/ingest/watch_config.ts";
 import { ingest } from "../src/ingest/ingest.ts";
 import { runThirdDown, summarizeThirdDown } from "../src/engine/thirddown.ts";
 import { rateThirdDown, loadDefinition, leagueThirdDown } from "../src/rating/league.ts";
@@ -256,13 +257,14 @@ async function main() {
       const interval = num("interval", 1800) ?? 1800;
       const source = new NFLDataSource({ onRequest: (i) => { if (i.status !== 200) log(`  HTTP ${i.status} ${i.url}`); } });
       const pulse = new TheSportsDBSource({});
-      log(`watch season ${season} every ${interval}s (ingest + pulse) — Ctrl-C to stop`);
+      const deep = resolveWatchDeep(flags.deep, process.env.CHALK_WATCH_DEEP);
+      log(`watch season ${season} every ${interval}s (ingest + pulse, deep=${deep}) — Ctrl-C to stop`);
       const ctl = new AbortController();
       process.on("SIGINT", () => { ctl.abort(); stop(); process.exit(0); });
       while (!ctl.signal.aborted) {
         const t0 = Date.now();
         try {
-          const r = await ingest({ store, source, scope: { season, deep: flags.deep === true }, log: () => {} });
+          const r = await ingest({ store, source, scope: { season, deep }, log: () => {} });
           const knownGames = (await store.query<Game>(`FROM ${COLL.games}`)).map((g) => g.data);
           const pt = await pulseTick({ store, source: pulse, knownGames, log: () => {} });
           process.stdout.write(JSON.stringify({ at: new Date().toISOString(), season, games_with_results: r.games_fetched, plays_new: r.normalized_written, plays_dup: r.raw_duplicates, changed: r.raw_changed, errors: r.errors.length, pulse_obs: pt.observations, pulse_changed: pt.raw_changed, live: pt.live_games, seq: pt.nedb_seq, ms: Date.now() - t0 }) + "\n");
@@ -312,8 +314,9 @@ async function main() {
       const watchCtl = new AbortController();
       if (watchSeason) {
         const interval = num("watch-interval", Number(process.env.CHALK_WATCH_INTERVAL ?? 1800))!;
-        log(`watch: season ${watchSeason} every ${interval}s in-process (${mode} store)`);
-        startWatchLoop(store, watchSeason, interval, flags.deep === true, watchCtl.signal);
+        const deep = resolveWatchDeep(flags.deep, process.env.CHALK_WATCH_DEEP);
+        log(`watch: season ${watchSeason} every ${interval}s in-process (${mode} store, deep=${deep} — context ${deep ? "included" : "skipped; CHALK_WATCH_DEEP=0"})`);
+        startWatchLoop(store, watchSeason, interval, deep, watchCtl.signal);
       } else {
         log(`watch: off (set CHALK_WATCH_SEASON or --watch-season to re-ingest + pulse on a cadence)`);
       }
@@ -329,7 +332,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write(`chalk — football intelligence engine\n\nusage:\n  chalk ingest --season 2025 [--team TB] [--game ID] [--deep]\n  chalk analyze --team TB --season 2025 [--game ID] [--side defense]\n  chalk rate --team TB --season 2025 [--definition ID]\n  chalk scan --team TB --season 2025\n  chalk league --season 2025\n  chalk pulse [--watch] [--interval 120]      near-live game state (TheSportsDB)\n  chalk watch --season 2026 [--interval 1800] re-ingest + pulse on a cadence\n  chalk rankings --season 2025 [--definition offense_default@1.0.0]\n  chalk verify\n  chalk serve [--port 4040] [--host 127.0.0.1]\n`);
+      process.stdout.write(`chalk — football intelligence engine\n\nusage:\n  chalk ingest --season 2025 [--team TB] [--game ID] [--deep]\n  chalk analyze --team TB --season 2025 [--game ID] [--side defense]\n  chalk rate --team TB --season 2025 [--definition ID]\n  chalk scan --team TB --season 2025\n  chalk league --season 2025\n  chalk pulse [--watch] [--interval 120]      near-live game state (TheSportsDB)\n  chalk watch --season 2026 [--interval 1800] re-ingest (deep by default; CHALK_WATCH_DEEP=0 to skip context) + pulse on a cadence\n  chalk rankings --season 2025 [--definition offense_default@1.0.0]\n  chalk verify\n  chalk serve [--port 4040] [--host 127.0.0.1]\n`);
       process.exit(cmd ? 1 : 0);
   }
 }
