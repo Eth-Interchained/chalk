@@ -16,6 +16,7 @@ import type { Store } from "../store/nedb.ts";
 import { validateFilter, type SituationFilter } from "../engine/situation.ts";
 import { complete, LlmError, type LlmConfig } from "./client.ts";
 import { PLANNER_SYSTEM, PLANNER_USER_SUFFIX, PROMPT_VERSION } from "./prompts.ts";
+import { GAME_RANK_METRICS, type GameRankMetric } from "../engine/games.ts";
 
 export type Intent =
   | "third_down"
@@ -27,10 +28,11 @@ export type Intent =
   | "rating"
   | "rating_compare"
   | "opponent_report"
+  | "game_rank"
   | "unsupported";
 
 export const INTENTS: readonly Intent[] = [
-  "third_down", "tendency", "comparison", "situation_scan", "game_summary", "play_explain", "rating", "rating_compare", "opponent_report", "unsupported",
+  "third_down", "tendency", "comparison", "situation_scan", "game_summary", "play_explain", "rating", "rating_compare", "opponent_report", "game_rank", "unsupported",
 ];
 
 export interface QueryPlan {
@@ -212,6 +214,18 @@ export function validatePlan(input: unknown, ctx: PlanContext): { ok: boolean; p
       if (errors.length) return { ok: false, errors };
       return { ok: true, plan: { ...base, filters: f, filter: v.filter }, errors: [] };
     }
+    case "game_rank": {
+      const team = typeof filters.team === "string" ? filters.team.toUpperCase() : ctx.default_team;
+      const season = typeof filters.season === "number" ? filters.season : ctx.default_season;
+      const metric = filters.metric === undefined ? "epa" : String(filters.metric);
+      if (ctx.teams.length && !ctx.teams.includes(team)) errors.push(`team: ${team} is not a known team`);
+      if (!Number.isInteger(season)) errors.push("season: integer required");
+      if (!GAME_RANK_METRICS.includes(metric as GameRankMetric)) errors.push(`filters.metric: one of ${GAME_RANK_METRICS.join("|")}`);
+      const bad = Object.keys(filters).filter((k) => !["team", "season", "metric"].includes(k));
+      if (bad.length) errors.push(`filters: unknown keys ${bad.join(", ")}`);
+      if (errors.length) return { ok: false, errors };
+      return { ok: true, plan: { ...base, filters: { team, season, metric } }, errors: [] };
+    }
     case "comparison": {
       const a = withDefaults((o.a ?? filters.a ?? {}) as Record<string, unknown>);
       const b = withDefaults((o.b ?? filters.b ?? {}) as Record<string, unknown>);
@@ -343,6 +357,11 @@ export function rulePlan(question: string, ctx: PlanContext): Omit<QueryPlan, "l
       return mk("tendency", f);
     }
     return mk("third_down", { team, ...scope, side, exclude_garbage_time: garbage });
+  }
+  // Games ranked: "best game", "worst game", "which game", "biggest win", "worst loss", "closest game", "blowout".
+  if (!gameId && (/\b(best|worst|greatest|finest|toughest|ugliest)\b.{0,40}\bgames?\b|\bgames?\b.{0,40}\b(best|worst)\b|\b(which|what) game\b|biggest (win|loss|blowout)|worst loss|closest (game|win|loss)|blowout|most dominant/.test(q))) {
+    const metric = /margin|biggest (win|loss)|blowout|closest|point/.test(q) ? "margin" : /defen[cs]/.test(q) ? "defense" : /success/.test(q) ? "success" : "epa";
+    return mk("game_rank", { team, season, metric });
   }
   if (/hurt|struggl|weak|problem|worst|what.?s wrong|going wrong|why .*(lose|lost|losing)|biggest issue/.test(q)) {
     if (gameId && /why .*(lose|lost)/.test(q)) return mk("game_summary", { game_id: gameId, team });
