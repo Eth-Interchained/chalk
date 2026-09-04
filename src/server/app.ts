@@ -6,6 +6,7 @@
  * counts and errors (V3 §39).
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { auditSeason } from "../ingest/audit.ts";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -446,6 +447,12 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       ]);
       const [seq, head] = await Promise.all([store.seq(), store.head()]);
       return json(res, 200, { nedb: { seq, head }, ingest_runs: events.map((r) => ({ _hash: r._hash, ...r.data })), source_changes: changes.map((r) => ({ _hash: r._hash, ...r.data })), pulse_ticks: pulse.map((r) => ({ _hash: r._hash, ...r.data })) });
+    }
+    if (p === "/api/v1/ingest/audit" && m === "GET") {
+      const season = Number(q.get("season") ?? defaultSeason);
+      if (!Number.isInteger(season)) throw new HttpError(400, "season: integer required");
+      const a = await auditSeason(store, season);
+      return json(res, 200, q.get("full") === "1" ? a : { ...a, per_game: undefined });
     }
     if (p === "/api/v1/pulse/games" && m === "GET") {
       const rows = await store.query<GameStateDoc>(`FROM ${GAME_STATE}`);

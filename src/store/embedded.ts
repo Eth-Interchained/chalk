@@ -104,7 +104,7 @@ export class EmbeddedStore {
         let alive = false;
         try { process.kill(pid, 0); alive = true; } catch (e) { alive = (e as NodeJS.ErrnoException).code === "EPERM"; }
         if (alive) throw new Error(`data dir ${dataDir} is held by a live process (pid ${pid}, LOCK file) — one engine per directory; stop it or point CHALK_DATA elsewhere`);
-        log(`embedded: stale LOCK (pid ${pid} not running) at ${dataDir} — proceeding`);
+        log(`embedded: previous holder of ${dataDir} (pid ${pid}) has exited — taking the lock (normal after any CLI run; the core leaves LOCK behind)`);
       } else if (raw) {
         log(`embedded: LOCK present at ${dataDir} but no pid could be read from it (${raw.slice(0, 40)}) — proceeding; if another engine has this dir open, reads will be wrong`);
       }

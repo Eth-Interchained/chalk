@@ -155,9 +155,16 @@ export class NFLDataSource implements FootballSource {
         }));
       }
       offset += rows.length;
-      // Stop on a short page OR when we've reached the advertised total. The
-      // short-page check protects us if `total` is ever wrong upstream.
-      if (rows.length < pageSize || offset >= body.total) return;
+      const total = typeof body.total === "number" ? body.total : offset;
+      if (offset >= total) return;
+      // A short page BEFORE the advertised total is the source contradicting
+      // itself (throttled/partial 200). Refuse to accept it quietly: throw so
+      // the caller records the game in `errors` and refetches next run, rather
+      // than a season silently coming up one game short.
+      if (rows.length < pageSize) {
+        throw new SourceError(`${endpoint} short page: got ${offset} of advertised ${total} rows (page ${rows.length}/${pageSize}, ${JSON.stringify(params)}) — incomplete upstream response`, endpoint, 200, JSON.stringify(body).slice(0, 200));
+      }
+      if (rows.length === 0) return; // total > 0 but a full-size empty page cannot happen; guard against a loop
     }
   }
 
