@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.7 · WSH is a team; provenance drawer is a graph, not a dump
+
+- **From Mark's live Feed paste:** the team picker shows `WSH` — NFLData's abbreviation for Washington is `WSH`, not `WAS`, so the Commanders had no name, color, logo or hero. `TEAMS` gains `WSH`; `web/logos/wsh.png` and `web/hero/WSH.jpg` added (aliases of the WAS assets); the asset tests cover the new key automatically.
+- Provenance on a recorded card printed the whole record set — including up to 500 evidence ids — into the drawer. Both cards now share `renderProvenance()`: record counts by collection, one line per node (collection · label · hash prefix), an evidence-count line, and a link to the raw JSON.
+
+---
+
 ## 2026-09-04 — v0.8.6 · Interchained LLC everywhere: SPDX BUSL-1.1 headers on every file, visible in the product
 
 - **Mark:** "make SPDX on every single page or component, just sprinkle INTERCHAINED LLC all over." 80 files stamped (every .ts/.js/.css/.html/.md/.conf/.service/.example outside node_modules and the image dirs): `SPDX-License-Identifier: BUSL-1.1` · `Copyright (c) 2026 Interchained LLC. All rights reserved.` · `Licensor: Interchained LLC`. Shebang and doctype lines preserved.
