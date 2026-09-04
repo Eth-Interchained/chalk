@@ -209,7 +209,11 @@ export function validatePlan(input: unknown, ctx: PlanContext): { ok: boolean; p
         const allowedExtra = new Set(intent === "rating" ? ["definition_id", "subject"] : []);
         const bad = v.unknown_keys.filter((k) => !allowedExtra.has(k));
         if (bad.length) errors.push(`filters: unknown keys ${bad.join(", ")}`);
-        if (intent === "rating" && f.subject !== undefined && !["third_down", "offense", "defense", "red_zone", "explosiveness", "ball_security"].includes(String(f.subject))) errors.push(`filters.subject: unknown ${JSON.stringify(f.subject)}`);
+        if (intent === "rating" && f.subject !== undefined) {
+          const canon = normalizeRatingSubject(f.subject);
+          if (canon) f.subject = canon; // "success" / "Success Rate" / "turnovers" -> the subject that carries that metric
+          else errors.push(`filters.subject: unknown ${JSON.stringify(f.subject)} (one of ${RATING_SUBJECTS.join("|")})`);
+        }
       }
       if (errors.length) return { ok: false, errors };
       return { ok: true, plan: { ...base, filters: f, filter: v.filter }, errors: [] };
@@ -310,7 +314,39 @@ export function resolveTeam(text: string, teams: string[]): string | null {
   return null;
 }
 
+/** Words -> rating subject. Badge names map to the subject whose components carry their metric. */
+export function ratingSubjectFor(q: string): string | null {
+  const t = q.toLowerCase();
+  if (/third|3rd|converts|stalls on third|money down/.test(t)) return "third_down";
+  if (/red.?zone/.test(t)) return "red_zone";
+  if (/explosiv|big play|dink and dunk/.test(t)) return "explosiveness";
+  if (/ball security|turnover|giveaway|protects the ball|loose ball/.test(t)) return "ball_security";
+  if (/defen[cs]e|defensive/.test(t)) return "defense";
+  if (/offen[cs]e|overall|success|efficien|epa|positive plays|negative plays|steady|inconsistent|stalling/.test(t)) return "offense";
+  return null;
+}
+
+/** Model-written subject aliases -> canonical subject, or null when unrecognisable. */
+export function normalizeRatingSubject(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const v = raw.toLowerCase().trim().replace(/[\s-]+/g, "_");
+  if (RATING_SUBJECTS.includes(v)) return v;
+  return ratingSubjectFor(v.replace(/_/g, " "));
+}
+export const RATING_SUBJECTS = ["third_down", "offense", "defense", "red_zone", "explosiveness", "ball_security"];
+
 export function rulePlan(question: string, ctx: PlanContext): Omit<QueryPlan, "latency_ms"> | null {
+  try {
+    return rulePlanInner(question, ctx);
+  } catch (e) {
+    // The rule planner must never take the whole ask down: an invalid plan of its
+    // own making is reported as "could not interpret", with the reason logged.
+    process.stderr.write(`rulePlan: ${(e as Error).message}\n`);
+    return null;
+  }
+}
+
+function rulePlanInner(question: string, ctx: PlanContext): Omit<QueryPlan, "latency_ms"> | null {
   const q = question.toLowerCase();
   const team = resolveTeam(question, ctx.teams) ?? ctx.default_team;
   const seasonMatch = question.match(/\b(20\d{2})\b/);
@@ -340,7 +376,7 @@ export function rulePlan(question: string, ctx: PlanContext): Omit<QueryPlan, "l
   }
   if (/why .*(disagree|different)|rating.*(vs|versus|compare)|compare.*rating/.test(q)) return null; // needs explicit ids — UI path
   if (/\brating|rated|grade|score out of|badge\b/.test(q)) {
-    const subject = /third|3rd/.test(q) ? "third_down" : /red.?zone/.test(q) ? "red_zone" : /explosiv/.test(q) ? "explosiveness" : /ball security|turnover|giveaway/.test(q) ? "ball_security" : /defen[cs]e/.test(q) ? "defense" : /offen[cs]e|overall/.test(q) ? "offense" : null;
+    const subject = ratingSubjectFor(q) ?? (/\bbadge\b/.test(q) ? "offense" : null);
     if (subject) return mk("rating", { team, season, subject });
   }
   if (/\b(compare|vs\.?|versus|than last (season|year)|this (season|year) (vs|versus|against|to) last)\b/.test(q)) {

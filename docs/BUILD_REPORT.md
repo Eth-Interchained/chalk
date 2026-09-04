@@ -4,6 +4,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.7.4 · badge taps always plan; rating subject aliases repaired; rule planner never throws
+
+### SHIPPED
+- **Mark:** tapping ACHILLES HEEL · SUCCESS RATE asked "Why does Tampa Bay have the achilles heel · success rate badge?" → `fallback` + "CHALK could not turn that into a football query — filters.subject: unknown \"success\"". The model wrote `subject: "success"` (a metric, not a subject) and the validator rejected it; the rule planner had no mapping for success/epa/badge names and, had it produced anything invalid, `mk()` threw straight out of the ask.
+- `ratingSubjectFor(words)` maps metric words and every badge name to the subject whose components carry that metric (success/efficiency/EPA/steady/inconsistent → offense; converts/money down → third_down; big play/dink and dunk → explosiveness; protects the ball/loose ball/turnover → ball_security). Badge questions with an unrecognised word default to offense — a badge tap can never fail to plan.
+- `normalizeRatingSubject` repairs model aliases ("success", "Success Rate", "turnovers", "third-down") in the validator instead of rejecting; unknown subjects get an error that lists the valid ones.
+- `rulePlan` wraps its body: an invalid plan of its own making is logged and reported as "could not interpret", never an exception out of the ask handler.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: the exact question → rating/offense; five badge names → subjects; alias repair; unknown subject error text; 68/68 both stores. Live: the exact question on the local store → `rating {TB, 2025, offense}` with the offense statements (success rate 27th percentile named as weakest component).
+
+---
+
 ## 2026-09-04 — v0.7.3 · opponent_report: "the CIN defense" scouts the defense; model plans repaired instead of rejected
 
 ### SHIPPED

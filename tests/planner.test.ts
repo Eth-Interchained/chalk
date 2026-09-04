@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validatePlan, rulePlan, resolveTeam, planQuestion, type PlanContext } from "../src/llm/planner.ts";
+import { validatePlan, rulePlan, ratingSubjectFor, normalizeRatingSubject, resolveTeam, planQuestion, type PlanContext } from "../src/llm/planner.ts";
 import { buildMessages, evidenceBytes, deterministicFallback, type EvidencePackage } from "../src/llm/explain.ts";
 import type { LlmConfig } from "../src/llm/client.ts";
 
@@ -150,4 +150,24 @@ test("opponent_report: 'the CIN defense' scouts CIN's DEFENSE; model plan with t
   assert.equal(validatePlan({ intent: "opponent_report", filters: { season: 2025 } }, ctx).plan!.filters.opponent, "CIN");
   assert.match(validatePlan({ intent: "opponent_report", filters: { season: 2025 } }, { ...ctx, next_opponent: undefined }).errors[0], /no team named and no next opponent/);
   assert.match(validatePlan({ intent: "opponent_report", filters: { team: "TB", opponent: "TB" } }, ctx).errors[0], /same as team/);
+});
+
+test("badge questions always plan: metric words and badge names map to a rating subject; model subject aliases are repaired; rules never throw", () => {
+  const ctx = { default_team: "TB", default_season: 2025, teams: ["TB", "CIN", "KC", "CAR"] };
+  const h = rulePlan("Why does Tampa Bay have the achilles heel · success rate badge?", ctx)!;
+  assert.equal(h.intent, "rating"); assert.equal(h.filters.subject, "offense");
+  assert.equal(rulePlan("Why does Tampa have the protects the ball badge?", ctx)!.filters.subject, "ball_security");
+  assert.equal(rulePlan("Why does Tampa have the converts badge?", ctx)!.filters.subject, "third_down");
+  assert.equal(rulePlan("Why does Tampa have the big play threat badge?", ctx)!.filters.subject, "explosiveness");
+  assert.equal(rulePlan("Why does Tampa have the signature · ball security badge?", ctx)!.filters.subject, "ball_security");
+  assert.equal(rulePlan("Why does Tampa have the mystery badge?", ctx)!.filters.subject, "offense"); // unknown badge word -> offense, never a failure
+  assert.equal(normalizeRatingSubject("success"), "offense");
+  assert.equal(normalizeRatingSubject("Success Rate"), "offense");
+  assert.equal(normalizeRatingSubject("turnovers"), "ball_security");
+  assert.equal(normalizeRatingSubject("third-down"), "third_down");
+  assert.equal(normalizeRatingSubject("vibes"), null);
+  assert.equal(ratingSubjectFor("epa per play"), "offense");
+  const v = validatePlan({ intent: "rating", filters: { team: "TB", season: 2025, subject: "success" } }, ctx);
+  assert.ok(v.ok, v.errors.join(";")); assert.equal(v.plan!.filters.subject, "offense");
+  assert.match(validatePlan({ intent: "rating", filters: { team: "TB", season: 2025, subject: "vibes" } }, ctx).errors[0], /unknown "vibes" \(one of/);
 });
