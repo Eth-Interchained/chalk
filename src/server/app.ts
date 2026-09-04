@@ -357,6 +357,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const season = Number(q.get("season") ?? defaultSeason);
       const def = (await loadDefinition(store, q.get("definition") ?? CARD_SUBJECTS.find((c) => c.subject === subject)!.definition.id));
       if (!def) throw new HttpError(404, "unknown rating definition");
+      { const mismatch = definitionSubjectMismatch(def, subject as (typeof RATING_SUBJECTS)[number]); if (mismatch) throw new HttpError(400, mismatch); }
       const side = def.subject === "defense" ? "defense" : "offense";
       const lp = await leagueProfilesFor(store, season, side, log);
       const games = (await store.query<Game>(`FROM ${COLL.games} WHERE season = ${season}`)).map((g) => g.data);
