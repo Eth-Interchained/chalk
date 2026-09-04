@@ -105,6 +105,8 @@ export class WorkerStore implements Store {
   ping(): Promise<boolean> { return this.closed ? Promise.resolve(false) : this.call("ping", []); }
   ensureDatabase(): Promise<void> { return this.call("ensureDatabase", []); }
   trace(coll: string, id: string, reverse = false): Promise<NedbRow[]> { return this.call("trace", [coll, id, reverse]); }
+  /** The cache lives on the worker; its put/batchPut already invalidate. Exposed for Store parity. */
+  invalidateCollection(coll: string): number { void this.call("invalidateCollection", [coll]).catch((e) => console.warn(`invalidateCollection(${coll}) on worker failed: ${(e as Error).message}`)); return 0; }
   get client() {
     return {
       createIndex: (coll: string, field: string, kind: "sorted" | "eq" = "eq") => this.call<{ ok: boolean }>("client.createIndex", [coll, field, kind]),

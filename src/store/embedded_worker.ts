@@ -58,6 +58,7 @@ port.on("message", async (m: Req) => {
       case "client.queryFull": result = await store.client.queryFull(args[0] as string); break;
       case "client.listDatabases": result = await store.client.listDatabases(); break;
       case "invalidateCache": store.invalidateCache(); result = null; break;
+      case "invalidateCollection": result = store.invalidateCollection(args[0] as string); break;
       case "setCacheTtlMs": store.cacheTtlMs = Number(args[0]); result = null; break;
       case "close": store.close(); result = null; break;
       default: throw new Error(`embedded_worker: unknown method ${method}`);

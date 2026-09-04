@@ -210,3 +210,8 @@ test("favorite is local-first (v0.12.6): the star never routes through the ident
   assert.ok(body.includes("const un = state.favorite === state.team;"), "starring the favorite un-stars it");
   assert.ok(js.includes("A local favorite chosen before the handle existed goes up once the handle is here."));
 });
+
+test("pick lookup uses the game's season (v0.12.7): a next-season game can show your pick", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  assert.ok(js.includes("/api/v1/fans/picks?fan_id=${id.fan_id}&season=${g.season ?? state.season}"));
+});

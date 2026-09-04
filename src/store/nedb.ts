@@ -63,6 +63,8 @@ export interface Store {
   cacheTtlMs: number;
   onCacheHit: ((info: { nql: string; ageMs: number; rows: number }) => void) | null;
   invalidateCache(): void;
+  /** Drop cached query answers over one collection (put/batchPut call this; exposed for tests + servers). */
+  invalidateCollection(coll: string): number;
   put<T extends Record<string, unknown>>(coll: string, id: string, doc: T, lineage?: Lineage): Promise<NedbRow<T>>;
   get<T = Record<string, unknown>>(coll: string, id: string): Promise<NedbRow<T> | null>;
   query<T = Record<string, unknown>>(nql: string): Promise<NedbRow<T>[]>;
@@ -133,6 +135,7 @@ export class ChalkStore {
     doc: T,
     lineage: Lineage = {},
   ): Promise<NedbRow<T>> {
+    this.invalidateCollection(coll); // a write must be visible to the next read of its collection (v0.12.7)
     const opts: PutOptions = {};
     if (lineage.causedBy?.length) opts.causedBy = lineage.causedBy;
     if (lineage.evidence) opts.evidence = lineage.evidence;
@@ -160,6 +163,14 @@ export class ChalkStore {
 
   invalidateCache(): void {
     this.cache.clear();
+  }
+  /** Drop cached answers that read `coll` (see EmbeddedStore.invalidateCollection). */
+  invalidateCollection(coll: string): number {
+    if (!this.cache.size) return 0;
+    const re = new RegExp(`\\bFROM\\s+${coll.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    let n = 0;
+    for (const k of [...this.cache.keys()]) if (re.test(k)) { this.cache.delete(k); n++; }
+    return n;
   }
 
   async query<T = Record<string, unknown>>(nql: string): Promise<NedbRow<T>[]> {
@@ -199,6 +210,7 @@ export class ChalkStore {
     ops: Array<{ coll: string; id: string; doc: Record<string, unknown>; causedBy?: string[] }>,
     chunk = 500,
   ): Promise<{ written: number; errors: Array<{ id: string; error: string }>; seq: number; head: string; hashes: Map<string, string> }> {
+    for (const c of new Set(ops.map((o) => o.coll))) this.invalidateCollection(c);
     let written = 0;
     const errors: Array<{ id: string; error: string }> = [];
     const hashes = new Map<string, string>();

@@ -137,17 +137,27 @@ export class EmbeddedStore {
   }
 
   invalidateCache(): void { this.cache.clear(); }
+  /** Drop cached answers that read `coll` — a write must be visible to the next read of its own collection
+   *  (v0.12.7: fan picks/hype/posts were invisible for a whole TTL after the server acknowledged them).
+   *  Targeted on purpose: writes to sr_* / analyses never touch the play/game scans that make Home fast. */
+  invalidateCollection(coll: string): number {
+    if (!this.cache.size) return 0;
+    const re = new RegExp(`\\bFROM\\s+${coll.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    let n = 0;
+    for (const k of [...this.cache.keys()]) if (re.test(k)) { this.cache.delete(k); n++; }
+    return n;
+  }
 
   async put<T extends Record<string, unknown>>(coll: string, id: string, doc: T, lineage: Lineage = {}): Promise<NedbRow<T>> {
     const body: Record<string, unknown> = { ...doc };
     delete body.caused_by; // never let a user field masquerade as lineage
     if (lineage.causedBy?.length) body.caused_by = lineage.causedBy;
     const out = JSON.parse(this.core.put(coll, id, JSON.stringify(body)));
-    // Deliberately NOT clearing the read cache here: CHALK's own writes
-    // (analyses, ratings, observations, fan rows) never change the play/game
-    // tables the cached scans cover, and clearing on every put made Home
-    // recompute on every request (measured 17.4s warm). Ingest/pulse writes
-    // invalidate through the server's event watcher, same as the HTTP store.
+    // Not clearing the WHOLE read cache here (that made Home recompute on every request, 17.4s warm) —
+    // but the written collection's cached answers must go, or a fan's own pick is invisible to them for a
+    // full TTL (v0.12.7). Play/game scans are untouched by sr_*/analysis writes; ingest/pulse writes also
+    // invalidate through the server's event watcher.
+    this.invalidateCollection(coll);
     return normalizeRow<T>(out);
   }
 
@@ -180,6 +190,7 @@ export class EmbeddedStore {
     let written = 0;
     const errors: Array<{ id: string; error: string }> = [];
     const hashes = new Map<string, string>();
+    for (const c of new Set(ops.map((o) => o.coll))) this.invalidateCollection(c);
     for (const o of ops) {
       try {
         const row = await this.put(o.coll, o.id, o.doc, { causedBy: o.causedBy });
