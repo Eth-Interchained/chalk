@@ -77,7 +77,7 @@ export async function auditSeason(store: Store, season: number): Promise<SeasonA
   const ctxRowsForSeason = per_game.reduce((s, g) => s + g.context, 0);
   const ok = short_games.length === 0;
   const parts = [`${season}: ${withResults.length}/${games.length} games with results, ${plays.length} plays, ${ctxRowsForSeason} context rows.`];
-  if (short_games.length) parts.push(`${short_games.length} game(s) short of the ${MIN_PLAYS_COMPLETED_GAME}-play floor: ${short_games.map((g) => `${g.game_id} (${g.plays})`).join(", ")} — re-run \`chalk ingest --season ${season} --game <ID> --deep\`.`);
+  if (short_games.length) parts.push(`${short_games.length} game(s) short of the ${MIN_PLAYS_COMPLETED_GAME}-play floor: ${short_games.map((g) => `${g.game_id} (${g.plays})`).join(", ")} — re-run ${short_games.map((g) => `\`chalk ingest --season ${season} --game ${g.game_id} --deep\``).join(" and ")}.`);
   if (games_without_context.length) parts.push(`${games_without_context.length} game(s) without context — run \`chalk ingest --season ${season} --context-only\`.`);
   if (ok && !games_without_context.length) parts.push("Nothing missing.");
   return {
