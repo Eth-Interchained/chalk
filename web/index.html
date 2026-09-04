@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0e14" />
+<title>CHALK · Sports-Rater</title>
+<meta name="description" content="Live football intelligence. The database knows. Deterministic code calculates. The model interprets. Provenance proves." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css" />
+<link rel="icon" href="/chalk.svg" type="image/svg+xml" />
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">
+    <span class="mark">CHALK</span><span class="sub">Sports-Rater</span>
+  </a>
+  <div class="ctx">
+    <select id="team" class="pill" aria-label="Team"></select>
+    <select id="season" class="pill" aria-label="Season"></select>
+    <button id="mode" class="pill mode" aria-pressed="false" title="Toggle coach view">Fan</button>
+  </div>
+</header>
+
+<main id="main">
+  <section id="hero" class="hero">
+    <div class="rating-card" id="rating-card">
+      <div class="rc-head">
+        <div>
+          <div class="rc-team" id="rc-team">—</div>
+          <div class="rc-label">Third Down Rating</div>
+        </div>
+        <div class="rc-rank" id="rc-rank"></div>
+      </div>
+      <div class="rc-body">
+        <div class="ring" id="ring"><svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="ring-fg" cx="60" cy="60" r="52"/></svg><div class="ring-num" id="rc-score">–</div></div>
+        <div class="rc-meta">
+          <div class="rc-line" id="rc-line1"></div>
+          <div class="rc-line" id="rc-line2"></div>
+          <div class="rc-line small" id="rc-line3"></div>
+          <div class="rc-actions">
+            <button class="chip" data-ask="How does Tampa's third-down rating break down?">Why this number?</button>
+            <button class="chip" id="rate-differently">Rate differently</button>
+            <button class="chip" id="show-league">League</button>
+          </div>
+        </div>
+      </div>
+      <div class="rc-components" id="rc-components"></div>
+    </div>
+    <div class="pulse" id="pulse"></div>
+  </section>
+
+  <section class="suggest" id="suggest"></section>
+
+  <section id="feed" class="feed"></section>
+</main>
+
+<form id="ask" class="ask" autocomplete="off">
+  <input id="q" name="q" type="text" placeholder="Ask CHALK about football…" enterkeyhint="send" />
+  <button type="submit" aria-label="Ask">→</button>
+</form>
+
+<template id="tpl-answer">
+  <article class="card answer">
+    <header class="card-head">
+      <div class="q"></div>
+      <div class="badges"></div>
+    </header>
+    <div class="statements"></div>
+    <div class="prose"></div>
+    <div class="coach"></div>
+    <footer class="card-foot">
+      <button class="chip act-evidence">Show evidence</button>
+      <button class="chip act-coach">Coach view</button>
+      <button class="chip act-provenance">Provenance</button>
+      <button class="chip act-plan">Plan</button>
+    </footer>
+    <div class="drawer"></div>
+  </article>
+</template>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>
