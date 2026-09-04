@@ -44,3 +44,22 @@ test("persist + load roundtrip; re-persist replaces (new version, same id); vers
   await store.put(COLL.home_snapshots, homeSnapshotId("TB", 2025, "old"), { ...doc("1"), snapshot_version: "0" } as unknown as Record<string, unknown>);
   assert.equal(await loadHomeSnapshot(store, "TB", 2025, "old"), null);
 });
+
+test("dataStampFrom: do-nothing ticks do not move the stamp; writes do (v0.9.1 — Home rebuilt every 30 min on run count)", async () => {
+  const { dataStampFrom, ingestRunWrote, pulseTickWrote } = await import("../src/server/home.ts");
+  const wrote = { nedb_seq_after: 100, raw_written: 3, raw_changed: 0, normalized_written: 3, context_written: 0 };
+  const nothing = { nedb_seq_after: 101, raw_written: 0, raw_changed: 0, normalized_written: 0, context_written: 0 };
+  const tickNothing = { nedb_seq: 102, raw_written: 0, raw_changed: 0, states_written: 0 };
+  const tickWrote = { nedb_seq: 90, raw_written: 0, raw_changed: 1, states_written: 1 };
+  assert.equal(ingestRunWrote(wrote), true); assert.equal(ingestRunWrote(nothing), false);
+  assert.equal(pulseTickWrote(tickWrote), true); assert.equal(pulseTickWrote(tickNothing), false);
+  const before = dataStampFrom([wrote], [tickWrote]);
+  assert.equal(before, "w100:p90");
+  // the failure mode: every watch tick appends an event row that changed nothing
+  assert.equal(dataStampFrom([wrote, nothing, { ...nothing, nedb_seq_after: 103 }], [tickWrote, tickNothing, { ...tickNothing, nedb_seq: 104 }]), before);
+  // real writes move it
+  assert.equal(dataStampFrom([wrote, nothing, { nedb_seq_after: 105, raw_written: 0, raw_changed: 0, normalized_written: 0, context_written: 12 }], [tickWrote]), "w105:p90");
+  assert.equal(dataStampFrom([wrote], [tickWrote, { nedb_seq: 106, raw_written: 1, raw_changed: 0, states_written: 0 }]), "w100:p106");
+  assert.equal(dataStampFrom([], []), "w0:p0");
+  assert.equal(homeServeDecision(doc(before), before), "fresh_snapshot");
+});
