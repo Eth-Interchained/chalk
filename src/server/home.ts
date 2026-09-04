@@ -202,3 +202,52 @@ export async function loadTeamPlaysWithContext(store: Store, f: SituationFilter)
 }
 
 export { nqlStr };
+
+// ------------------------------------------------------------ persisted Home
+//
+// buildHome is ~8 season-scale NQL scans (~26s cold on the VPS). Its caches
+// live in the process, so every restart (= every deploy) made the first fan
+// stare at three dots for half a minute. The fix is NEDB-native: the built
+// payload is stored, stamped with the data version it was computed from.
+//   fresh snapshot  -> serve instantly
+//   stale snapshot  -> serve instantly, flagged, recompute once in background
+//   no snapshot     -> compute inline (first ever build for that team/season)
+
+export const HOME_SNAPSHOT_VERSION = "1";
+
+export interface HomeSnapshotDoc {
+  team: string;
+  season: number;
+  definition_id: string;
+  /** Data version the payload was built from (ingest + pulse event count, see app.ts). */
+  data_stamp: string;
+  snapshot_version: string;
+  built_ms: number;
+  created_at: string;
+  payload: HomePayload;
+}
+
+export function homeSnapshotId(team: string, season: number, definitionId: string): string {
+  return `home:${team}:${season}:${definitionId}`;
+}
+
+export async function loadHomeSnapshot(store: Store, team: string, season: number, definitionId: string): Promise<NedbRow<HomeSnapshotDoc> | null> {
+  const row = await store.get<HomeSnapshotDoc>(COLL.home_snapshots, homeSnapshotId(team, season, definitionId));
+  if (row && row.data.snapshot_version !== HOME_SNAPSHOT_VERSION) return null; // shape changed: rebuild
+  return row;
+}
+
+export async function persistHomeSnapshot(store: Store, payload: HomePayload, definitionId: string, dataStamp: string, builtMs: number, now = new Date().toISOString()): Promise<NedbRow<HomeSnapshotDoc>> {
+  const doc: HomeSnapshotDoc = { team: payload.team, season: payload.season, definition_id: definitionId, data_stamp: dataStamp, snapshot_version: HOME_SNAPSHOT_VERSION, built_ms: builtMs, created_at: now, payload };
+  const row = await store.put(COLL.home_snapshots, homeSnapshotId(payload.team, payload.season, definitionId), doc as unknown as Record<string, unknown>, { evidence: `home snapshot @ data ${dataStamp}` });
+  return row as unknown as NedbRow<HomeSnapshotDoc>;
+}
+
+export type HomeServeDecision = "fresh_snapshot" | "stale_snapshot" | "compute";
+
+/** Pure: what the route should do given the stored snapshot and the current data stamp. */
+export function homeServeDecision(snap: HomeSnapshotDoc | null, currentStamp: string | null): HomeServeDecision {
+  if (!snap) return "compute";
+  if (currentStamp !== null && snap.data_stamp === currentStamp) return "fresh_snapshot";
+  return "stale_snapshot";
+}

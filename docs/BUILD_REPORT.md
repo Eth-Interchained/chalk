@@ -4,6 +4,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.6.5 · Home is snapshot-first: restart costs milliseconds, not 30 s of three dots
+
+### SHIPPED
+- **Bug (Mark, VPS):** after `serve` restarted, the Home page sat empty (ring "•••", blank tiles) for ~30 s, then filled. Trigger: first visit after restart. Root cause: `buildHome` is ~8 season-scale NQL scans (`warmup: home TB 2025 ready in 26000ms` on the VPS) and every cache was in-process — a restart (= every deploy) threw them away; a visitor arriving during warmup started a SECOND identical build instead of joining the first.
+- `football_home_snapshots`: the built payload is persisted with `data_stamp` = ingest + pulse event count at build time (the same counter the cache watcher already polls). Route decision (`homeServeDecision`, pure): fresh snapshot → serve instantly; stale snapshot → serve instantly with `served.refreshing: true`, rebuild once in the background; no snapshot → build inline (once per team/season, ever). `computeHome` dedupes concurrent builds per key and persists on completion. Warmup checks the snapshot first and only rebuilds when stale. `?fresh=1` forces.
+- Client: response `served` block drives a `refreshing…` chip + one 4 s re-pull (≤8) until fresh; an inline build past 1.5 s says "Computing from the full season's plays — first look at this team since the data changed (~30s)" in the tiles instead of nothing.
+- Ratings on Mark's screen matched this store exactly: ring 66 (#11), Offense 48 / Defense 45 / Third Down 66 / Red Zone 40 / Explosiveness 67 / Ball Security 73.
+
+### VERIFIED ON THE REAL SYSTEM
+- Local: restart serve → first `/home` request served from snapshot in ms with `served.source: "snapshot", fresh: true`; `?fresh=1` rebuilds and re-persists. Tests: decision matrix, persist/load roundtrip, re-persist versions, version-mismatch reads as absent. Full suite both stores.
+
+---
+
 ## 2026-09-04 — v0.6.4 · client: subject-rating answers rendered; a render bug can no longer kill the ask stream
 
 ### SHIPPED

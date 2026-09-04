@@ -7,6 +7,8 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { auditSeason } from "../ingest/audit.ts";
+import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapshot, type HomePayload } from "./home.ts";
+import type { RatingDefinition } from "../rating/definitions.ts";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,6 +84,47 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
   const webDir = opts.webDir ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web");
   const defaultTeam = opts.defaultTeam ?? process.env.CHALK_DEFAULT_TEAM ?? "TB";
   let defaultSeason = opts.defaultSeason ?? (process.env.CHALK_DEFAULT_SEASON ? Number(process.env.CHALK_DEFAULT_SEASON) : 0);
+  // Data version stamp = ingest + pulse event count, maintained by the watcher
+  // tick below. null until the first tick has run. Persisted Home snapshots
+  // carry the stamp they were built from; equal stamp => nothing changed.
+  let dataStamp: string | null = null;
+  const homeInflight = new Map<string, Promise<HomePayload>>();
+  /** Build once per key at a time, persist with the current stamp, log the cost. Concurrent callers share the promise. */
+  function computeHome(team: string, season: number, def: RatingDefinition): Promise<HomePayload> {
+    const key = homeSnapshotId(team, season, def.id);
+    const running = homeInflight.get(key);
+    if (running) return running;
+    const t0 = Date.now();
+    const stampAtStart = dataStamp;
+    const job = buildHome(store, team, season, def, log)
+      .then(async (payload) => {
+        if (stampAtStart !== null) {
+          await persistHomeSnapshot(store, payload, def.id, stampAtStart, Date.now() - t0).catch((e) => log(`home snapshot persist failed for ${key}: ${(e as Error).message}`));
+        } else {
+          log(`home ${key} built before the first data tick — not persisted (stamp unknown); next build will be`);
+        }
+        return payload;
+      })
+      .finally(() => homeInflight.delete(key));
+    homeInflight.set(key, job);
+    return job;
+  }
+  /** Snapshot-first Home: instant when a snapshot exists, background refresh when it is stale, inline build only for a never-built key. */
+  async function serveHome(team: string, season: number, def: RatingDefinition, force: boolean): Promise<HomePayload & { served: { source: "snapshot" | "computed"; fresh: boolean; refreshing: boolean; data_stamp: string | null; snapshot_stamp: string | null; built_ms: number | null } }> {
+    const snap = force ? null : await loadHomeSnapshot(store, team, season, def.id);
+    const decision = force ? "compute" : homeServeDecision(snap?.data ?? null, dataStamp);
+    if (decision === "fresh_snapshot") {
+      return { ...snap!.data.payload, served: { source: "snapshot", fresh: true, refreshing: false, data_stamp: dataStamp, snapshot_stamp: snap!.data.data_stamp, built_ms: snap!.data.built_ms } };
+    }
+    if (decision === "stale_snapshot") {
+      log(`home ${team} ${season}: snapshot stamp ${snap!.data.data_stamp} != data ${dataStamp ?? "unknown"} — serving stale, recomputing in background`);
+      computeHome(team, season, def).catch((e) => log(`home background recompute failed for ${team} ${season}: ${(e as Error).message}`));
+      return { ...snap!.data.payload, served: { source: "snapshot", fresh: false, refreshing: true, data_stamp: dataStamp, snapshot_stamp: snap!.data.data_stamp, built_ms: snap!.data.built_ms } };
+    }
+    const t0 = Date.now();
+    const payload = await computeHome(team, season, def);
+    return { ...payload, served: { source: "computed", fresh: true, refreshing: false, data_stamp: dataStamp, snapshot_stamp: null, built_ms: Date.now() - t0 } };
+  }
   let teamsCache: { at: number; teams: string[]; seasons: number[] } | null = null;
 
   async function meta(): Promise<{ teams: string[]; seasons: number[] }> {
@@ -337,7 +380,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const team = mm[1].toUpperCase();
       const season = Number(q.get("season") ?? defaultSeason);
       const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id)) ?? THIRD_DOWN_DEFAULT_V1;
-      return json(res, 200, await buildHome(store, team, season, def, log));
+      return json(res, 200, await serveHome(team, season, def, q.get("fresh") === "1"));
     }
     // ------------------------------------------------- Sports-Rater fan layer
     if (p.startsWith("/api/v1/fans/") && m === "POST") {
@@ -585,6 +628,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     const tick = async () => {
       try {
         const n = (await store.client.queryFull(`FROM ${COLL.ingest_events}`)).count + (await store.client.queryFull(`FROM ${PULSE_EVENTS}`).catch(() => ({ count: 0 }))).count;
+        dataStamp = String(n);
         if (lastIngestCount >= 0 && n !== lastIngestCount) {
           store.invalidateCache();
           invalidateLeagueCache();
@@ -605,7 +649,9 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
   // ~300ms, not the ~10s cold path (three season-scale NQL scans).
   if (defaultSeason && process.env.CHALK_WARMUP !== "0") {
     const t0 = Date.now();
-    buildHome(store, defaultTeam, defaultSeason, THIRD_DOWN_DEFAULT_V1, () => {}).then(
+    const existing = await loadHomeSnapshot(store, defaultTeam, defaultSeason, THIRD_DOWN_DEFAULT_V1.id).catch(() => null);
+    log(existing ? `warmup: persisted home snapshot for ${defaultTeam} ${defaultSeason} (data ${existing.data.data_stamp}, now ${dataStamp ?? "?"}) serves instantly; ${existing.data.data_stamp === dataStamp ? "fresh — no rebuild needed" : "stale — rebuilding in background"}` : `warmup: no persisted home for ${defaultTeam} ${defaultSeason} yet — building (first request will wait on this same build)`);
+    (existing && existing.data.data_stamp === dataStamp ? Promise.resolve(existing.data.payload) : computeHome(defaultTeam, defaultSeason, THIRD_DOWN_DEFAULT_V1)).then(
       () => log(`warmup: home ${defaultTeam} ${defaultSeason} ready in ${Date.now() - t0}ms`),
       (e) => log(`warmup failed (server still serving): ${(e as Error).message}`),
     );
