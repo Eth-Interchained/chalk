@@ -22,7 +22,7 @@ import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
 import type { Store, NedbRow } from "../store/nedb.ts";
 import { stream, type LlmConfig, type StreamEvent } from "./client.ts";
-import { EXPLAINER_SYSTEM, EXPLAINER_USER_SUFFIX, PROMPT_VERSION } from "./prompts.ts";
+import { EXPLAINER_USER_SUFFIX, PROMPT_VERSION, explainerSystem, type Register } from "./prompts.ts";
 import type { QueryPlan } from "./planner.ts";
 import { evidenceKey } from "./record.ts";
 
@@ -54,6 +54,8 @@ export interface ObservationRecord {
   evidence_key?: string;
   /** The deterministic statements shown with the answer, so a recorded answer renders without re-execution. */
   statements?: string[];
+  /** Which room the answer was written for: fan (default) or coach. Part of the evidence key — the two never cross-serve. */
+  register?: Register;
   query_plan: { id: string; intent: string; filters: unknown; source: string };
   model: string;
   model_revision: string | null;
@@ -76,7 +78,7 @@ export type ExplainEvent =
   | { type: "observation"; observation: ObservationRecord; hash: string | null }
   | { type: "error"; error: string };
 
-export function buildMessages(question: string, pkg: EvidencePackage, ctx: { team: string; season: number }) {
+export function buildMessages(question: string, pkg: EvidencePackage, ctx: { team: string; season: number; register?: Register }) {
   const evidence = {
     kind: pkg.kind,
     context: ctx,
@@ -87,7 +89,7 @@ export function buildMessages(question: string, pkg: EvidencePackage, ctx: { tea
   };
   const user = `QUESTION: ${question}\n\nEVIDENCE (JSON, computed deterministically by CHALK):\n${JSON.stringify(evidence)}${EXPLAINER_USER_SUFFIX}`;
   return [
-    { role: "system" as const, content: EXPLAINER_SYSTEM },
+    { role: "system" as const, content: explainerSystem(ctx.register ?? "fan") },
     { role: "user" as const, content: user },
   ];
 }
@@ -103,7 +105,7 @@ export async function* explain(
   question: string,
   plan: QueryPlan,
   pkg: EvidencePackage,
-  ctx: { team: string; season: number },
+  ctx: { team: string; season: number; register?: Register },
   log: (l: string) => void = () => {},
 ): AsyncGenerator<ExplainEvent> {
   const started = Date.now();
@@ -174,8 +176,9 @@ export async function* explain(
     intent: plan.intent,
     team: ctx.team,
     season: ctx.season,
-    evidence_key: evidenceKey(plan, pkg),
+    evidence_key: evidenceKey(plan, pkg, undefined, ctx.register ?? "fan"),
     statements: pkg.deterministic_statements ?? [],
+    register: ctx.register ?? "fan",
     query_plan: { id: plan.id, intent: plan.intent, filters: plan.filters, source: plan.source },
     model: cfg.model,
     model_revision: null,

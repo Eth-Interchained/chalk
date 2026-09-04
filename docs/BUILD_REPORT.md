@@ -5,6 +5,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.9.0 · Coach mode is a real mode
+
+### SHIPPED
+- **Mark:** "it seems like coach and fan modes are the same effects." They were: a body class, a shorter hero, and a table inside answer cards. Now Coach is a different room.
+- **Coach deck** on the Dashboard (coach mode only): every rating's components table (weight, raw, league median, percentile, rank, points) for all six subjects; third down by distance; weakest / strongest situations from the scan with EPA vs team; this week's opponent by situation. Fetched from the existing deterministic endpoints, rendered as dense mono tables; fan-layer controls (Fans tile, Rate it, takes, Rate differently) hidden; hero shortened; mono numerals.
+- **Coach register for GLM**: `EXPLAINER_SYSTEM_COACH` — same hard rules (numbers only from EVIDENCE, sample-honest), different room: lead with situation + number, cause the evidence shows, what to attack / what to fix, terse, no fan framing. Ask carries `mode`; the observation records `register`; **the evidence key includes the register** so a fan answer is never served from the record to a coach or vice versa. Regenerate preserves the original register. PROMPT_VERSION 0.5.0 (invalidates all prior record keys — every first ask streams fresh once).
+- Badges: `coach read` on live coach answers and on recorded coach answers in the Feed.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: prompt selection, key separation, static deck/mode wiring; 86/86 both stores. Live: ask with `mode: "coach"` on the local store records `register: coach` on the observation and a different evidence key than the fan ask of the same question.
+
+---
+
 ## 2026-09-04 — v0.8.9 · the mark: a chalk tick, a red dot — favicon, app icons, header brand
 
 - **Mark:** "custom favicon and iconic logo for me?" One vector we own (`web/icons/mark.svg`): near-black rounded tile, a bold chalk stroke (white → lime gradient, faint chalk-dust halo, grain) shaped as a tick that reads as both a yard-line mark and a rating check, and a single red dot — the "RATER" accent. `favicon.svg` (halo-free for 16 px), `mark-mono.svg`, PNG set 16/32/48/180/192/512 + maskable 512 rendered from the same geometry (supersampled), `favicon.ico` (16/32/48), `site.webmanifest`. Both pages link the set; the mark sits in the header before SPORTS RATER. `chalk.svg` aliases the mark for old links. Static test guards the whole set.
