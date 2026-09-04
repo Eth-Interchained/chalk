@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { auditSeason } from "../ingest/audit.ts";
 import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapshot, type HomePayload } from "./home.ts";
 import type { RatingDefinition } from "../rating/definitions.ts";
+import { logoConfig } from "./logos.ts";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -184,7 +185,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     if (p === "/api/v1/meta") {
       const mt = await meta();
       const defs = await listDefinitions(store);
-      return json(res, 200, { teams: mt.teams, seasons: mt.seasons, defaults: { team: defaultTeam, season: defaultSeason || null }, rating_definitions: defs.map((d) => ({ id: d.id, name: d.name, version: d.version, components: d.components })), licensing: LICENSING, suggested_questions: SUGGESTED });
+      return json(res, 200, { teams: mt.teams, seasons: mt.seasons, defaults: { team: defaultTeam, season: defaultSeason || null }, rating_definitions: defs.map((d) => ({ id: d.id, name: d.name, version: d.version, components: d.components })), licensing: LICENSING, team_logos: logoConfig(), suggested_questions: SUGGESTED });
     }
     if (p === "/api/v1/teams") return json(res, 200, { teams: (await meta()).teams });
     if (p === "/api/v1/verify") return json(res, 200, await store.verify());
