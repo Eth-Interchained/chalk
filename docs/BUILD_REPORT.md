@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.11 · the sharecard draws first
+
+- **Mark:** "its too slow now … it loads in like a minute."
+- **Root cause (mine):** `openShareCard` awaited the server caption before drawing anything, and `/api/v1/share` called `serveHome` — which right after a deploy waits behind the ~30 s Home rebuild on the single worker (or computes inline when no snapshot exists). Every number on the card was already in `state.home`; the picture was waiting on the slowest thing in the system for a line of text.
+- **Fix:** draw immediately from `state.home`; fetch the server caption in parallel and race it against a 4 s local fallback (same numbers, same URL; the server copy is preferred for parity with the OG tags and swapped in when it wins). `/api/v1/share` and the `/s/TEAM` landing read the Home **snapshot only** — never compute inline (a crawler must never trigger a 30 s build); no snapshot → 404 with the reason, client keeps the local caption. Status line says which caption it used.
+- Tests: static guard (draw before fetch, race, snapshot-only routes). 111/111 both stores.
+
 ## 2026-09-04 — v0.12.10 · League after a headline switch: "ball_security@1.0.0 rates ball_security, not third_down"
 
 - **Mark:** clicked League on Third Down after visiting Ball Security → the server's subject guard (v0.10.0) refused the request. Right guard, wrong caller: switching the headline back to third down never reset `state.rating`, so the Ball Security definition id rode along into the third-down League call.

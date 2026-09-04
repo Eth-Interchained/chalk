@@ -188,8 +188,10 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
           const season = Number(url.searchParams.get("season") ?? defaultSeason);
           let html = await readFile(path.join(webDir, "index.html"), "utf8");
           try {
-            const home = await serveHome(team, season, THIRD_DOWN_DEFAULT_V1, false);
-            html = injectOg(html, shareCopy(home, url.searchParams.get("headline") ?? "third_down", publicBase(process.env, req.headers)));
+            // Snapshot only (see /api/v1/share): a crawler must never trigger a 30 s Home build.
+            const snap = await loadHomeSnapshot(store, team, season, THIRD_DOWN_DEFAULT_V1.id);
+            if (!snap) throw new Error(`no Home snapshot yet for ${team} ${season}`);
+            html = injectOg(html, shareCopy(snap.data.payload, url.searchParams.get("headline") ?? "third_down", publicBase(process.env, req.headers)));
           } catch (e) {
             log(`share landing ${team} ${season}: OG tags skipped — ${(e as Error).message}`);
           }
@@ -440,8 +442,11 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     if ((mm = p.match(/^\/api\/v1\/share\/([A-Za-z]{2,3})$/)) && m === "GET") {
       const team = mm[1].toUpperCase();
       const season = Number(q.get("season") ?? defaultSeason);
-      const home = await serveHome(team, season, THIRD_DOWN_DEFAULT_V1, false);
-      return json(res, 200, { ...shareCopy(home, q.get("headline") ?? "third_down", publicBase(process.env, req.headers)), served: home.served });
+      // Snapshot only — never compute Home inline for a caption. No snapshot yet → 404 with the reason; the client
+      // has a local caption and the picture never waits on the store (v0.12.11).
+      const snap = await loadHomeSnapshot(store, team, season, THIRD_DOWN_DEFAULT_V1.id);
+      if (!snap) throw new HttpError(404, `no Home snapshot yet for ${team} ${season} — open the dashboard once; the caption is built from it`);
+      return json(res, 200, { ...shareCopy(snap.data.payload, q.get("headline") ?? "third_down", publicBase(process.env, req.headers)), snapshot_stamp: snap.data.data_stamp });
     }
     if ((mm = p.match(/^\/api\/v1\/teams\/([A-Za-z]{2,3})\/home$/)) && m === "GET") {
       const team = mm[1].toUpperCase();

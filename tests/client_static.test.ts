@@ -171,7 +171,7 @@ test("headline sharecard (v0.12.0): share button, canvas draw, copy/download/cap
   for (const host of ["twitter.com/intent/tweet", "facebook.com/sharer", "threads.net/intent/post", "reddit.com/submit", "linkedin.com/sharing"]) assert.ok(js.includes(host), host);
   assert.ok(js.includes('new ClipboardItem({ "image/png"') && js.includes("navigator.share(") && js.includes("a.download = f.name"));
   assert.ok(js.includes('location.pathname.match(/^\\/s\\/([A-Za-z]{2,3})$/)'), "SPA reads the team from a /s/TEAM landing");
-  assert.ok(server.includes("injectOg(html, shareCopy(home") && server.includes('/api\\/v1\\/share\\/([A-Za-z]{2,3})$'), "server: landing with OG tags + share copy route");
+  assert.ok(server.includes("injectOg(html, shareCopy(snap.data.payload") && server.includes('/api\\/v1\\/share\\/([A-Za-z]{2,3})$'), "server: landing with OG tags (from the snapshot) + share copy route");
 });
 
 test("home snapshot stamp carries the code version (v0.12.2): a deploy invalidates snapshots once", () => {
@@ -230,4 +230,17 @@ test("headline state reset (v0.12.10): switching back to third down resets the a
   const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
   assert.ok(js.includes('state.ratingSubject = "third_down";\n    renderRating(h); return;'), "third-down path resets state.rating from the Home payload");
   assert.equal((js.match(/state\.ratingSubject === sj \? state\.rating\?\.snapshot\?\.definition_id : undefined/g) || []).length, 3, "League, saved-formula click and custom-formula save all guard by subject");
+});
+
+test("sharecard draws before the caption arrives (v0.12.11): server caption raced against a 4 s local fallback; share routes are snapshot-only", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const fn = js.slice(js.indexOf("async function openShareCard("));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.ok(body.indexOf("const drawn = drawShareCard(canvas)") < body.indexOf("api(`/api/v1/share/"), "draw starts before the caption request");
+  assert.ok(body.includes("Promise.race([remote, timeout])") && body.includes("4000"), "caption is raced against a 4 s timeout");
+  const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
+  const shareRoute = server.slice(server.indexOf("api\\/v1\\/share\\/"), server.indexOf("shareCopy(snap.data.payload, q.get"));
+  assert.ok(shareRoute.includes("loadHomeSnapshot(store, team, season, THIRD_DOWN_DEFAULT_V1.id)") && !shareRoute.includes("serveHome("), "share copy reads the snapshot, never computes Home");
+  const landing = server.slice(server.indexOf("const sm = url.pathname.match"), server.indexOf("await serveStatic(res, url.pathname);"));
+  assert.ok(!landing.includes("serveHome("), "/s/TEAM landing never computes Home for a crawler");
 });

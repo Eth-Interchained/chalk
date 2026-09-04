@@ -722,11 +722,21 @@ async function openShareCard() {
   showCard(card);
   const canvas = $("canvas", card), out = $(".out", card), cap = $(".cap", card), soc = $(".soc", card);
   const say = (m, err) => { out.textContent = m; out.classList.toggle("err", Boolean(err)); };
-  let copy = null;
-  try { copy = await api(`/api/v1/share/${state.team}?season=${state.season}&headline=${sj}`); }
-  catch (e) { say(`caption from server unavailable (${e.message}) — using a local one`, true); const n = headlineNumbers(); const url = `${location.origin}/s/${state.team}?season=${state.season}${sj !== "third_down" ? `&headline=${sj}` : ""}`; copy = { title: `${state.team} ${headlineLabel(sj)} — Sports-Rater`, text: `${teamName(state.team)} ${state.season} — ${headlineLabel(sj)} ${n?.score ?? "–"}/100 · #${n?.rank ?? "–"} of ${n?.of ?? "–"}.\nDeterministic, every number traceable. Provenance proves.\n${url}`, url, hashtags: ["SportsRater", "CHALK", state.team] }; }
-  cap.textContent = copy.text;
-  try { await drawShareCard(canvas); } catch (e) { say(`could not draw the card: ${e.message}`, true); }
+  // Draw FIRST — every number on the card is already in state.home. The caption comes from the server for parity
+  // with the OG tags, but it must never gate the picture: after a deploy the store is busy rebuilding Home and a
+  // store-bound request can wait ~30 s (v0.12.11: "loads in like a minute"). Race it against a 4 s local fallback.
+  const n0 = headlineNumbers(); const url0 = `${location.origin}/s/${state.team}?season=${state.season}${sj !== "third_down" ? `&headline=${sj}` : ""}`;
+  const local = { title: `${state.team} ${headlineLabel(sj)} ${n0 ? `${n0.score}/100 · #${n0.rank} of ${n0.of}` : ""} — Sports-Rater`.replace(/\s+—/, " —"), text: `${teamName(state.team)} ${state.season} — ${headlineLabel(sj)} ${n0?.score ?? "–"}/100 · #${n0?.rank ?? "–"} of ${n0?.of ?? "–"}.\nDeterministic, every number traceable. Provenance proves.\n${url0}`, url: url0, hashtags: ["SportsRater", "CHALK", state.team, "NFL"] };
+  const drawn = drawShareCard(canvas).catch((e) => say(`could not draw the card: ${e.message}`, true));
+  let copy = local; let copySource = "local";
+  try {
+    const remote = api(`/api/v1/share/${state.team}?season=${state.season}&headline=${sj}`);
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("caption request took > 4 s (engine busy)")), 4000));
+    copy = await Promise.race([remote, timeout]); copySource = "server";
+    remote.catch(() => {}); // if the race lost, the late answer is irrelevant — but never an unhandled rejection
+  } catch (e) { say(`caption: local (server ${e.message})`, false); }
+  cap.textContent = copy.text; if (copySource === "server") say("");
+  await drawn;
   const blob = () => new Promise((ok) => canvas.toBlob(ok, "image/png"));
   const file = async () => new File([await blob()], `sports-rater-${state.team}-${sj}-${state.season}.png`, { type: "image/png" });
   const intents = [
