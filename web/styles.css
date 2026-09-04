@@ -247,3 +247,22 @@ form.rd .go { justify-self: start; }
   .rc-components { grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .comp .v { font-size: 18px; }
 }
+
+/* ---------------- loading indicators ---------------- */
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skeleton { height: 14px; border-radius: 6px; margin: 8px 0; background: linear-gradient(90deg, var(--bg-3) 25%, #1f2935 50%, var(--bg-3) 75%); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; }
+.home.loading .tile::after, .home.loading .rt::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,.035) 50%, transparent 75%); background-size: 800px 100%; animation: shimmer 1.4s linear infinite; pointer-events: none; }
+.home.loading .tile-h::after { content: " · loading"; color: var(--fg-3); font-weight: 500; letter-spacing: 0; text-transform: none; }
+@keyframes ringpulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.ring.loading .ring-bg { animation: ringpulse 1.2s ease-in-out infinite; stroke: color-mix(in srgb, var(--accent) 45%, #1c2531); }
+.badge.working::after { content: "…"; animation: blink .8s infinite; }
+.progress { height: 4px; border-radius: 2px; background: var(--bg-3); overflow: hidden; margin: 8px 0; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s ease; box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
+
+/* ---------------- team logos ---------------- */
+.hero-logo-slot:empty { display: none; }
+.hero-logo { width: clamp(72px, 16vw, 112px); height: auto; filter: drop-shadow(0 0 24px color-mix(in srgb, var(--accent) 40%, transparent)); }
+.hero.has-logo .hero-abbr { font-size: clamp(36px, 9vw, 56px); margin-top: 4px; }
+.opp { display: flex; align-items: center; gap: 10px; }
+.opp-logo { width: 40px; height: 40px; object-fit: contain; flex: 0 0 auto; }
+.site-foot { margin: 28px 4px 12px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.5; color: var(--fg-3); display: grid; gap: 6px; }

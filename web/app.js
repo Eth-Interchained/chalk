@@ -21,6 +21,20 @@ const TEAMS = {
   SF: ["San Francisco 49ers", "#B3995D"], SEA: ["Seattle Seahawks", "#69BE28"], TB: ["Tampa Bay Buccaneers", "#FF4B3E"], TEN: ["Tennessee Titans", "#4B92DB"], WAS: ["Washington Commanders", "#FFB612"],
 };
 const teamName = (t) => (TEAMS[t]?.[0] ?? t).split(" ").slice(0, -1).join(" ") || t;
+// Team logos: config comes from /api/v1/meta (CHALK_TEAM_LOGOS=0 turns them off server-side).
+// Same resolver as src/server/logos.ts. Every <img> falls back to the wordmark on error.
+function logoUrl(abbr) {
+  const cfg = state.meta?.team_logos;
+  if (!cfg?.enabled || !abbr) return null;
+  const a = String(abbr).toUpperCase();
+  if (!/^[A-Z]{2,3}$/.test(a)) return null;
+  return cfg.url_template.replace("{abbr}", (cfg.abbr_map?.[a] ?? a).toLowerCase());
+}
+function logoImg(abbr, cls = "logo") {
+  const u = logoUrl(abbr);
+  if (!u) return "";
+  return `<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" decoding="async" onerror="this.remove()" />`;
+}
 function applyTeamTheme(t) {
   const c = TEAMS[t]?.[1] ?? "#c8ff3d";
   document.documentElement.style.setProperty("--accent", c);
@@ -39,7 +53,7 @@ async function api(path, opts) {
 
 // ------------------------------------------------------------------ boot
 async function boot() {
-  try { state.meta = await api("/api/v1/meta"); } catch (e) { $("#feed").prepend(el(`<div class="card"><div class="err">CHALK API unreachable: ${esc(e.message)}</div></div>`)); return; }
+  try { state.meta = await api("/api/v1/meta"); renderSiteFoot(); } catch (e) { $("#feed").prepend(el(`<div class="card"><div class="err">CHALK API unreachable: ${esc(e.message)}</div></div>`)); return; }
   state.teams = state.meta.teams; state.seasons = state.meta.seasons; state.defs = state.meta.rating_definitions;
   const url = new URL(location.href);
   state.team = (url.searchParams.get("team") || state.meta.defaults.team || "TB").toUpperCase();
@@ -64,10 +78,19 @@ function syncUrl() { const u = new URL(location.href); u.searchParams.set("team"
 function renderSuggest() { const s = $("#suggest"); s.innerHTML = ""; for (const q of state.meta.suggested_questions) s.append(el(`<button class="chip" data-ask="${esc(q)}">${esc(q.replaceAll("Tampa", teamName(state.team)))}</button>`)); }
 
 // ------------------------------------------------------------------ home
+function renderSiteFoot() {
+  const f = $("#site-foot"); if (!f) return;
+  const lic = state.meta?.licensing;
+  const src = lic ? Object.values(lic).map((l) => l?.name || l?.source).filter(Boolean) : [];
+  f.innerHTML = `<div>${esc(state.meta?.team_logos?.disclaimer ?? "")}</div>${src.length ? `<div>Data: ${esc(src.join(" · "))}. The database knows. Deterministic code calculates. The model interprets. Provenance proves.</div>` : ""}`;
+}
 let homeRefreshAttempts = 0;
 async function loadHome(defId) {
   applyTeamTheme(state.team);
+  $("#home").classList.add("loading");
+  $("#ring").classList.add("loading");
   $("#h-abbr").textContent = state.team;
+  const heroLogo = $("#h-logo"); heroLogo.innerHTML = logoImg(state.team, "hero-logo"); $("#hero").classList.toggle("has-logo", Boolean(heroLogo.firstChild));
   $("#h-name").textContent = TEAMS[state.team]?.[0] ?? "";
   $("#rc-score").textContent = "…";
   ["#h-badges", "#form-body", "#last-body", "#next-body", "#weak-body", "#rc-components", "#trend-headline", "#ratings", "#scout-body"].forEach((s) => { $(s).innerHTML = ""; });
@@ -79,6 +102,7 @@ async function loadHome(defId) {
     const h = await api(`/api/v1/teams/${state.team}/home?season=${state.season}${defId ? `&definition=${encodeURIComponent(defId)}` : ""}`);
     clearTimeout(slow);
     state.home = h; state.rating = h.rating ? { summary: h.rating, snapshot: { definition_id: h.rating.definition_id, id: h.rating_snapshot_id } } : null;
+    $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
     // Served from a snapshot built before the latest data change: show it, then re-pull once the background rebuild lands.
     if (h.served?.refreshing) { $("#rc-rank").insertAdjacentHTML("beforeend", ' <span class="badge amber" id="refreshing" title="data changed since this was computed; refreshing">refreshing…</span>'); homeRefreshAttempts = (homeRefreshAttempts ?? 0) + 1; if (homeRefreshAttempts <= 8) setTimeout(() => { if (state.team === h.team && state.season === h.season) loadHome(defId); }, 4000); } else homeRefreshAttempts = 0;
     renderRating(h);
@@ -92,7 +116,7 @@ async function loadHome(defId) {
     renderScout(h.scout, h.next_game);
     renderTrendChips(h.ratings);
     loadGames();
-  } catch (e) { clearTimeout(slow);
+  } catch (e) { clearTimeout(slow); $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
     $("#rc-score").textContent = "–";
     $("#rc-line1").innerHTML = `<span class="err">${esc(e.message)}</span>`;
     $("#rc-rank").textContent = e.status === 404 ? `No ${state.season} data — run: chalk ingest --season ${state.season}` : "";
@@ -187,7 +211,7 @@ function renderNext(n) {
   const g = n.game; const p = n.pulse;
   const when = g?.gameday ? new Date(g.gameday + "T12:00:00").toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }) : p?.kickoff ? new Date(p.kickoff).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric" }) : "";
   const home = g ? g.home_team === state.team : p ? p.home_team === state.team : true;
-  b.innerHTML = `<div class="opp"><div><div class="abbr">${home ? "vs" : "@"} ${esc(n.opponent)}</div><div class="kick">${esc(TEAMS[n.opponent]?.[0] ?? "")}${when ? ` · ${esc(when)}` : ""}${g?.week ? ` · Wk ${g.week}` : ""}${p?.phase === "live" ? ` · <b style="color:var(--red)">LIVE</b>` : ""}</div></div>
+  b.innerHTML = `<div class="opp">${logoImg(n.opponent, "logo opp-logo")}<div><div class="abbr">${home ? "vs" : "@"} ${esc(n.opponent)}</div><div class="kick">${esc(TEAMS[n.opponent]?.[0] ?? "")}${when ? ` · ${esc(when)}` : ""}${g?.week ? ` · Wk ${g.week}` : ""}${p?.phase === "live" ? ` · <b style="color:var(--red)">LIVE</b>` : ""}</div></div>
     ${n.opponent_rating ? `<div class="oscore">${n.opponent_rating.score}<small>their 3rd down · #${n.opponent_rating.rank}</small></div>` : ""}</div>
     <div style="margin-top:10px"><button class="chip" data-ask="What should I know about the ${esc(n.opponent)} offense?">Scout them</button></div>`;
 }
@@ -297,7 +321,9 @@ async function ask(question) {
   card.scrollIntoView({ behavior: "smooth", block: "start" });
   let evidence = null, planInfo = null, observation = null;
   prose.classList.add("streaming");
-  badges.append(el(`<span class="badge">planning…</span>`));
+  badges.append(el(`<span class="badge working">planning</span>`));
+  // Skeleton lines stand in for the deterministic statements until the evidence event lands.
+  statements.innerHTML = `<div class="skeleton" style="width:78%"></div><div class="skeleton" style="width:62%"></div><div class="skeleton" style="width:70%"></div>`;
   const url = new URL(location.href);
   const body = { question, team: state.team, season: state.season, game_id: url.searchParams.get("game_id") || undefined };
   try {
@@ -309,11 +335,12 @@ async function ask(question) {
       buf += dec.decode(value, { stream: true });
       let i; while ((i = buf.indexOf("\n\n")) >= 0) { const chunk = buf.slice(0, i); buf = buf.slice(i + 2); const ev = /^event: (.+)$/m.exec(chunk)?.[1]; const data = /^data: (.+)$/m.exec(chunk)?.[1]; if (ev && data) handle(ev, JSON.parse(data)); }
     }
-  } catch (e) { prose.classList.remove("streaming"); statements.append(el(`<div class="err">${esc(e.message)}</div>`)); }
+  } catch (e) { prose.classList.remove("streaming"); statements.querySelectorAll(".skeleton").forEach((x) => x.remove()); statements.append(el(`<div class="err">${esc(e.message)}</div>`)); }
   function handle(ev, d) {
     if (ev === "plan") { planInfo = d; badges.innerHTML = ""; if (d.plan) badges.append(el(`<span class="badge lime">${esc(d.plan.intent)}</span>`), el(`<span class="badge">${d.plan.source === "model" ? esc(d.plan.model) : "rules"}</span>`)); if (d.fallback_used) badges.append(el(`<span class="badge amber" title="${esc(d.errors.join("; "))}">fallback</span>`)); }
     else if (ev === "evidence") {
       evidence = d;
+      statements.innerHTML = "";
       for (const s of d.deterministic_statements) statements.append(el(`<div class="statement">${esc(s)}</div>`));
       const sample = d.summary?.rating?.sample_size ?? d.summary?.profile?.snaps;
       badges.append(el(`<span class="badge">${d.evidence_count ? `${d.evidence_count} plays` : sample ? `${sample} snaps · aggregate` : "no play list"}</span>`));
@@ -324,15 +351,20 @@ async function ask(question) {
     }
     else if (ev === "token") prose.textContent += d.text;
     else if (ev === "observation") { observation = d; prose.classList.remove("streaming"); if (d.id) badges.append(el(`<span class="badge" title="observation ${esc(d.id)}">${esc(d.model)} · ${(d.latency_ms / 1000).toFixed(1)}s</span>`)); if (d.answer_truncated) badges.append(el(`<span class="badge red">truncated</span>`)); if (d.skipped) badges.append(el(`<span class="badge amber">${esc(d.skipped)}</span>`)); }
-    else if (ev === "error") { prose.classList.remove("streaming"); statements.append(el(`<div class="err">${esc(d.error)}${d.errors ? ` — ${esc(d.errors.join("; "))}` : ""}</div>`)); }
+    else if (ev === "error") { prose.classList.remove("streaming"); statements.querySelectorAll(".skeleton").forEach((x) => x.remove()); statements.append(el(`<div class="err">${esc(d.error)}${d.errors ? ` — ${esc(d.errors.join("; "))}` : ""}</div>`)); }
     else if (ev === "done") prose.classList.remove("streaming");
   }
   $(".act-evidence", card).onclick = async () => {
     if (!evidence) return;
     if (!evidence.evidence_ids?.length) { const n = evidence.summary?.rating?.sample_size ?? evidence.summary?.profile?.snaps; drawer.innerHTML = `<div class="muted">This is an aggregate over ${n ?? "the season's"} snaps — no single play list. The component table is in Coach view; Provenance shows the stored rating and its lineage.</div>`; return; }
-    drawer.innerHTML = `<div class="muted">loading ${Math.min(evidence.evidence_ids.length, 300)} of ${evidence.evidence_count} plays…</div>`;
-    try { const plays = await loadPlays(evidence.evidence_ids); drawer.innerHTML = `<div class="h">Evidence · ${plays.length} of ${evidence.evidence_count} plays${evidence.calculation_ids.length ? ` · calc ${esc(evidence.calculation_ids.join(", "))}` : ""}</div>`; for (const p of plays) drawer.append(playRow(p)); }
-    catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    const total = Math.min(evidence.evidence_ids.length, 300);
+    drawer.innerHTML = `<div class="h">Evidence · <span id="ev-count">0</span> of ${evidence.evidence_count} plays${evidence.calculation_ids.length ? ` · calc ${esc(evidence.calculation_ids.join(", "))}` : ""}</div><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="0"><i style="width:0%"></i></div><div class="muted" id="ev-status">fetching plays by game…</div>`;
+    const bar = $(".progress i", drawer), status = $("#ev-status", drawer), count = $("#ev-count", drawer);
+    try {
+      const plays = await loadPlays(evidence.evidence_ids, (pr) => { bar.style.width = `${Math.round((pr.plays_loaded / Math.max(1, total)) * 100)}%`; bar.parentElement.setAttribute("aria-valuenow", pr.plays_loaded); count.textContent = pr.plays_loaded; status.textContent = `game ${pr.games_done} of ${pr.games_total} · ${pr.plays_loaded} plays`; });
+      count.textContent = plays.length; status.remove(); bar.parentElement.remove();
+      for (const p of plays) drawer.append(playRow(p));
+    } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   };
   $(".act-coach", card).onclick = () => card.classList.toggle("coach-on");
   card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => {
@@ -357,11 +389,24 @@ async function ask(question) {
   };
 }
 
-async function loadPlays(ids) {
+// Evidence plays are fetched per game (one request per game_id), four games in
+// flight at a time, reporting progress after each game so the drawer can show
+// a real bar instead of a static "loading…" line.
+async function loadPlays(ids, onProgress) {
   const wanted = ids.slice(0, 300);
   const byGame = new Map(); for (const id of wanted) { const g = id.split(":")[0]; if (!byGame.has(g)) byGame.set(g, new Set()); byGame.get(g).add(id); }
-  const out = [];
-  for (const [g, want] of byGame) { const r = await api(`/api/v1/games/${encodeURIComponent(g)}/plays`); for (const p of r.plays) if (want.has(p.id)) out.push(p); }
+  const games = [...byGame.entries()];
+  const out = []; let done = 0, loaded = 0;
+  const worker = async () => {
+    while (games.length) {
+      const [g, want] = games.shift();
+      const r = await api(`/api/v1/games/${encodeURIComponent(g)}/plays`);
+      const got = r.plays.filter((p) => want.has(p.id));
+      out.push(...got); done++; loaded += got.length;
+      onProgress?.({ games_done: done, games_total: byGame.size, plays_loaded: loaded, plays_total: wanted.length, plays: got });
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, games.length) }, worker));
   const order = new Map(wanted.map((id, i) => [id, i]));
   return out.sort((a, b) => order.get(a.id) - order.get(b.id));
 }

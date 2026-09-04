@@ -4,6 +4,17 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.6.6 · loading indicators everywhere; team logos with disclaimer
+
+### SHIPPED
+- **Mark:** "loading 227 of 227 plays…" sat as static text; the UI had no motion anywhere while working. Now: Home tiles and rating cards shimmer while loading (`.home.loading`), the ring pulses, ask cards show skeleton statement lines + an animated `planning` badge until the evidence event, and the Evidence drawer has a real progress bar (`aria-valuenow`) with "game k of K · n plays" — plays are fetched four games at a time in parallel (was sequential) and the count climbs as they land.
+- **Team logos** (`src/server/logos.ts`, surfaced in `/api/v1/meta.team_logos`): hot-linked from the public ESPN CDN by default (`{abbr}` template, nflverse→ESPN map WAS→wsh, LA→lar), `CHALK_TEAM_LOGOS=0` turns them off, `CHALK_TEAM_LOGO_URL` swaps the provider. Client renders the hero logo (wordmark shrinks beside it), the next-opponent logo, and every `<img>` removes itself on load error so the wordmark always stands. Site footer carries the trademark disclaimer + data attribution. Plainly: a disclaimer grants no rights; this is the identification-only usage every fan stats site relies on, and it is one env flip from off.
+
+### VERIFIED ON THE REAL SYSTEM
+- `/api/v1/meta` on the local serve carries `team_logos` with the template and map; `node --check web/app.js`; logos resolver test matrix; 62/62 both stores. Rendering itself is not browser-tested in the sandbox.
+
+---
+
 ## 2026-09-04 — v0.6.5 · Home is snapshot-first: restart costs milliseconds, not 30 s of three dots
 
 ### SHIPPED
