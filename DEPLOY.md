@@ -82,6 +82,7 @@ curl -sN -X POST https://sports-rater.com/api/v1/ask -H 'content-type: applicati
 | Ingest status | `curl -s http://127.0.0.1:4040/api/v1/ingest/status \| head -c 800` |
 | Season audit (is anything missing?) | `curl -s "http://127.0.0.1:4040/api/v1/ingest/audit?season=2025"` — names games below the 100-play floor or without context; `&full=1` for per-game counts. Fix a short game with `chalk ingest --season 2025 --game <ID> --deep` (stop `chalk` first). |
 | Home after restart | instant from the persisted snapshot in `football_home_snapshots`; if the data changed since, the stale one is served flagged `refreshing` and rebuilt in the background. `?fresh=1` on `/api/v1/teams/TB/home` forces a rebuild. |
+| Admin panel | set `CHALK_ADMIN_TOKEN=$(openssl rand -hex 24)` in `.env`, restart, open `https://sports-rater.com/admin`, paste the token (kept in that tab only). Usage, heatmaps, unanswered questions, fans, preferences, health. Unset = 404. |
 | Force a re-ingest now | `sudo systemctl restart chalk` (first watch tick is immediate) |
 | Backup | `sudo systemctl stop chalk`, tar `/opt/chalk/chalk-data`, start. Content-addressed and hash-chained; `chalk verify` after restore. |
 | Game day | the in-process watch keeps polling (plays + context every tick; `CHALK_WATCH_DEEP=0` to skip context if the source throttles); set `CHALK_WATCH_INTERVAL=600` in `.env` for 10-minute ticks and restart `chalk`. Premium TheSportsDB key in `.env` unlocks the live scoreboard path. |

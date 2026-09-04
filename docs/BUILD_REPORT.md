@@ -4,6 +4,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.0 · env-gated admin panel: usage, heatmaps, unanswered questions, fans, preferences, health
+
+### SHIPPED
+- **Mark:** "an admin panel env gated with all usage stats and heatmap and user preferences and anything we can learn about the users." Constraint kept: the footer promises no accounts / no personal data, so the panel learns from rows CHALK already writes for provenance (query_events, observations, sr_*, ingest/pulse events, home snapshots) plus one deliberately anonymous telemetry row per page view / tab / ask (`sr_telemetry`: team, season, mode, view, viewport bucket, fan handle if one exists — never IP or UA; `CHALK_TELEMETRY=0` disables; rate-limited per address like fan writes).
+- `src/server/admin.ts` — `adminOverview(store, {season, windowDays})`: asks per day + hour×weekday heatmap, from-the-record hit rate, fallback / could-not-plan / error counts, intents, teams, team×intent matrix, p50/p95 end-to-end / LLM / engine latency; top questions and the **unanswered / unsupported / errored** list (the tool-gap radar — today's game_rank and CIN-defense bugs would both have appeared here); planner fallbacks with their rejection reasons; answers (complete/truncated/errored, models, reaction tallies, most-reacted); fans (total, active 7d, writes, top handles by chain length, consensus per subject, rating distribution); preferences (teams, seasons, modes, tabs, viewports, events, visit heatmap, returning handles); health (seq/head, ingest runs, pulse ticks, home snapshots + stamps, season audit).
+- Gate: `CHALK_ADMIN_TOKEN` (≥16 chars, constant-time compare). Unset ⇒ `/admin`, `/admin.js`, `/admin.css`, `/api/v1/admin/*` are 404. Token lives in the admin tab's sessionStorage only.
+- `web/admin.html|css|js`: tool-grade dense layout — KPI strip, sparkline, two heatmaps, bars, team×intent matrix, question lists with reasons, health.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: auth matrix (exact match, short/unset refused), telemetry validation drops ip/ua and rejects garbage, full aggregation over a seeded store; 75/75 both stores. Live on the local serve: without the env `/admin` → 404; with it → 200, `/api/v1/admin/overview` 401 without bearer, 200 with; `POST /api/v1/telemetry` 202 and the row appears in preferences.
+
+---
+
 ## 2026-09-04 — v0.7.6 · the Feed is a first-class view; holo shimmer; pro scrollbars
 
 ### SHIPPED
