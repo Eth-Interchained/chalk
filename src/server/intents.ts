@@ -9,7 +9,8 @@ import { compare } from "../engine/comparison.ts";
 import { contextPatterns, patternStatements, summarizePatterns } from "../engine/context.ts";
 import { opponentReport, summarizeOpponentReport } from "../engine/opponent.ts";
 import { applyFilter } from "../engine/situation.ts";
-import { loadTeamPlaysWithContext } from "./home.ts";
+import { loadTeamPlaysWithContext, baseFilter } from "./home.ts";
+import { rankGames, gameRankStatements, describeMetric, type GameLine, type GameRankMetric } from "../engine/games.ts";
 import { analyzeDeviation } from "../engine/deviation.ts";
 import { computeMetrics, round } from "../engine/metrics.ts";
 import { scanSituations } from "../engine/scan.ts";
@@ -209,6 +210,30 @@ export async function execute(plan: QueryPlan, ctx: ExecContext): Promise<ExecRe
           deterministic_statements: statements,
         },
         detail: { scan: { ...scan, buckets: scan.buckets.map((b) => ({ ...b, evidence: b.evidence.length > 200 ? b.evidence.slice(0, 200) : b.evidence })) }, cached: Boolean(existing) },
+      };
+    }
+    case "game_rank": {
+      const team = String(plan.filters.team);
+      const season = Number(plan.filters.season);
+      const metric = String(plan.filters.metric ?? "epa") as GameRankMetric;
+      // Both sides of the ball: offense snaps (posteam) and defense snaps (defteam) for the season.
+      const off = await fetchCandidates(store, baseFilter(team, season, "offense"));
+      const def = await fetchCandidates(store, baseFilter(team, season, "defense"));
+      const games = (await store.query<Game>(`FROM ${COLL.games} WHERE season = ${season}`)).map((r) => r.data);
+      const r = rankGames([...off.rows, ...def.rows].map((x) => x.data), games, team, season, metric, { seq: off.seq, head: off.head });
+      const existing = await store.get(COLL.analyses, r.id);
+      const stored = existing ?? (await store.put(COLL.analyses, r.id, { ...r, games: r.games.map((g) => ({ ...g, evidence: g.evidence.length })), evidence: r.evidence.slice(0, 500) } as unknown as Record<string, unknown>, { evidence: `game-rank@${r.algorithm_version}` }));
+      const line = (g: GameLine) => ({ rank: g.rank, game_id: g.game_id, week: g.week, opponent: g.opponent, home: g.home, result: g.result, score: g.team_score === null ? null : `${g.team_score}-${g.opp_score}`, margin: g.margin, snaps: g.snaps, epa_per_play: round(g.epa_per_play, 3), success_pct: pct(g.success_rate), explosive_pct: pct(g.explosive_rate), turnovers: g.turnovers, def_epa_allowed: round(g.def_epa_allowed, 3), def_snaps: g.def_snaps });
+      return {
+        package: {
+          kind: "game_rank",
+          summary: { team, season, metric, metric_label: describeMetric(metric), best: r.best ? line(r.best) : null, worst: r.worst ? line(r.worst) : null, games: r.games.map(line), record: { wins: r.games.filter((g) => g.result === "W").length, losses: r.games.filter((g) => g.result === "L").length, ties: r.games.filter((g) => g.result === "T").length } },
+          calculation_ids: [r.id],
+          calculation_hashes: [stored._hash],
+          evidence_ids: r.evidence,
+          deterministic_statements: gameRankStatements(r),
+        },
+        detail: { rank: { ...r, games: r.games.map((g) => ({ ...g, evidence: g.evidence.length })) }, cached: Boolean(existing) },
       };
     }
     case "game_summary": {

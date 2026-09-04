@@ -4,6 +4,18 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.6.7 · game_rank intent: "which game was their best game" now has a tool
+
+### SHIPPED
+- **Mark:** "tell me about the best game tampa had in 2025" → badges `situation_scan · rules · fallback`; GLM answered that the evidence had no games. GLM was right. Trigger: the model planner proposed `unsupported` (no intent knew games) so rules took over and mapped "best" to a situation scan. Root cause: CHALK had no game-level tool — `recentForm` computed per-game lines internally but nothing exposed them.
+- `src/engine/games.ts` — `rankGames(plays, games, team, season, metric)`: one `GameLine` per completed game (opponent, home/away, result, score, margin, offense EPA/play, success, explosive, turnovers, defense EPA allowed), ranked by `epa | margin | success | defense` (versioned 1.0.0; ties → margin → week). Evidence = the best game's offensive snap ids so TRACE lands on plays. `gameRankStatements` writes the deterministic lines (best, worst, biggest win by margin when different, record).
+- Planner: `game_rank` intent + validator (team, season, metric; unknown keys rejected); prompt lists it (PROMPT_VERSION 0.4.0) so the model planner stops saying `unsupported`; rule planner routes "best/worst game", "which game", "biggest win", "worst loss", "closest", "blowout", "best defensive game" — and still scans for "what is Tampa best at" (no "game" word). Executor persists the ranking as a `football_analyses` record; coach view shows the full ranked table.
+
+### VERIFIED ON THE REAL SYSTEM
+- Live ask on the 48,771-play store: "tell me about the best game tampa had in 2025" → plan `game_rank`, statements name the game/score/EPA; evidence = that game's snaps. Tests: fixture game ranks as TB W 16-14 / CAR L; metric routing matrix; validator; 64/64 both stores.
+
+---
+
 ## 2026-09-04 — v0.6.6 · loading indicators everywhere; team logos with disclaimer
 
 ### SHIPPED

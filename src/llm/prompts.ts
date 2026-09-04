@@ -7,7 +7,7 @@
  * taught in the system prompt AND restated on the user turn — some models
  * ignore a system-only lesson.
  */
-export const PROMPT_VERSION = "0.3.0";
+export const PROMPT_VERSION = "0.4.0";
 
 export const PLANNER_SYSTEM = `You are the query planner for CHALK, a football intelligence engine. You translate a user's football question into ONE structured plan the deterministic engine can execute. You never compute statistics yourself.
 
@@ -21,6 +21,7 @@ Available intents:
 - "rating": a team's rating and how it is built. Filters: team, season, subject (one of offense|defense|third_down|red_zone|explosiveness|ball_security; default third_down), definition_id (optional).
 - "rating_compare": why two rating definitions disagree. Filters: team, season, a (definition id), b (definition id).
 - "opponent_report": scout an opponent — their tendencies by situation, formation/personnel usage, weak and strong spots. Filters: team, opponent (required; if the user says "this week's opponent" and context has next_opponent, use it), season, side ("offense" = their offense, default; "defense" = their defense).
+- "game_rank": a team's season game by game, ranked — "best game", "worst game", "which game was their best", "biggest win", "worst loss", "best defensive game". Filters: team, season, metric (one of epa|margin|success|defense; default epa = offensive EPA/play; use margin for biggest win/loss/blowout/closest, defense for defensive questions).
 - "unsupported": the question needs data CHALK does not have (coverage shells, injuries, player tracking, video). Provide "reason".
 
 Rules:
