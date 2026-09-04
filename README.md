@@ -19,7 +19,7 @@ question
 
 No computer vision. No hosted database. No model doing arithmetic.
 
-## What runs today (v0.3.0)
+## What runs today (v0.4.0)
 
 | Layer | What it does |
 | --- | --- |
@@ -29,6 +29,7 @@ No computer vision. No hosted database. No model doing arithmetic.
 | `src/rating/` | Versioned rating definitions over **six subjects** (Offense, Defense, Third Down, Red Zone, Explosiveness, Ball Security), percentile-rank normalization, 0–100 snapshots that record population, weights, raw and normalized values; **power rankings** with week-over-week movement; custom profiles; deterministic **disagreement explainer**; **badges**. |
 | `src/llm/` | OpenAI-compatible client (inactivity-only stream deadline), versioned prompts, planner with validation + rule fallback, streaming explainer that stores every answer as an observation `caused_by` the calculations it used. |
 | `src/server/` | Zero-framework HTTP API (OpenAPI at `/api/v1/openapi.json`), SSE `POST /api/v1/ask`, provenance routes (`TRACE caused_by` as JSON), static client. |
+| `src/fans/` | **Sports-Rater fan layer** — no accounts: nickname + a device-held salt → sha256 → `nick#xxxxxx` with a deterministic identicon. Fan ratings, reactions and takes are NEDB writes `caused_by` the CHALK record they react to and chained per fan by previous hash; feed newest-first; fan consensus vs CHALK; chain walk with link verification; token-bucket anti-spam. |
 | `web/` | **Sports-Rater Home**: team-colored hero with badges, rating ring, trend sparkline, recent form, last game with deviation, next up with opponent snapshot and *Scout them*, weak spots that ask on tap; ask bar, streamed answers, evidence drawer (tap a play to ask about it), coach view, *rate differently*, league table, provenance viewer. |
 
 Everything lives in **one NEDB database** (`chalk`) on a `nedbd` daemon. NEDB is the truth, history and provenance layer — not a cache.
@@ -100,6 +101,10 @@ Full document: `GET /api/v1/openapi.json`. Highlights:
 | `GET /api/v1/teams/TB/home?season=2025` | Home composite: rating card (6 subjects), trend, badges, form, last game + deviation, next game + scout card, weak spots |
 | `GET /api/v1/ratings/offense?team=TB&season=2025` | Any subject: `offense`, `defense`, `red-zone`, `explosiveness`, `ball-security` — snapshot + formula + team profile |
 | `GET /api/v1/rankings?season=2025[&definition=]` | Power rankings with movement, risers and fallers |
+| `POST /api/v1/fans/ratings` · `/fans/reactions` · `/fans/posts` | Fan writes (body carries `fan_id` + `handle`; no account) |
+| `GET /api/v1/feed?team=TB` | Newest-first feed of takes and ratings — the hash chain, rendered |
+| `GET /api/v1/fans/consensus?team=TB&season=2025` | Fans' mean/median per subject vs CHALK |
+| `GET /api/v1/fans/:fan_id` | A fan's chain, walked and verified link by link |
 | `GET /api/v1/ratings/third-down/trend?team=TB&season=2025` | Rating week over week, as known then |
 | `GET /api/v1/badges?team=TB&season=2025` | Earned badges with qualification rules |
 | `GET /api/v1/reports/opponent?team=TB[&opponent=CAR]` | Opponent report: six situations with formation/personnel context, weak/strong spots |
@@ -141,10 +146,14 @@ Every snapshot records population, weights, raw and normalized values, points pe
 
 ```bash
 npm run typecheck
-npm test              # node --test — 50 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
+npm test              # node --test — 54 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
 ```
 
 The frozen fixture is the real game `2025_18_CAR_TB` (159 plays as returned by NFLData on 2026-09-03). Ground truth asserted exactly: TB 8-of-15 on third down, 2-of-7 on third-and-long, CAR 1-of-8. The model is never required for analytics tests.
+
+## Sports-Rater identity
+
+There are no accounts. The browser makes a random salt once, keeps it in `localStorage`, and computes `fan_id = sha256("nickname:salt")`. The handle everyone sees is `nickname#` + the first six hex characters. Every rating, reaction and take carries `fan_id` + `handle` and nothing else about the person; the server never sees the salt and has no fan table. Each fan's writes form a chain (`prev` = hash of their previous write), and every write is `caused_by` the CHALK record it reacts to — so `TRACE` from a fan's take reaches the plays behind the number they were arguing about. Lose the device, lose the handle; that's the deal.
 
 ## Data & licensing
 

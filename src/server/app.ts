@@ -36,6 +36,13 @@ import { thirdDownTrend } from "../engine/trend.ts";
 import { evaluateBadges, BADGE_DEFINITIONS } from "../rating/badges.ts";
 import { opponentReport, summarizeOpponentReport } from "../engine/opponent.ts";
 import { analyzeDeviation } from "../engine/deviation.ts";
+import { identiconSvg, RateLimiter, verifyIdentity } from "../fans/identity.ts";
+import { consensus, fanChain, feed, post, rate, react, validatePost, validateRate, validateReaction } from "../fans/fans.ts";
+
+// Fan-layer anti-spam: 20 writes burst per handle, refilling 1 per 10s; 60 per address, 1 per 5s.
+const fanLimiter = new RateLimiter(20, 1 / 10_000);
+const ipLimiter = new RateLimiter(60, 1 / 5_000);
+setInterval(() => { fanLimiter.sweep(); ipLimiter.sweep(); }, 600_000).unref();
 
 export interface ServerOptions {
   store: ChalkStore;
@@ -125,7 +132,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
     if (p === "/api/v1/health" && m === "GET") {
       const [health, seq, head] = await Promise.all([store.health().catch((e) => ({ ok: false, error: (e as Error).message })), store.seq().catch(() => null), store.head().catch(() => null)]);
-      return json(res, 200, { chalk: "ok", version: "0.3.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
+      return json(res, 200, { chalk: "ok", version: "0.4.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
     }
     if (p === "/api/v1/openapi.json") return json(res, 200, openapiDocument(`${url.protocol}//${url.host}`));
     if (p === "/api/v1/meta") {
@@ -318,6 +325,69 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id)) ?? THIRD_DOWN_DEFAULT_V1;
       return json(res, 200, await buildHome(store, team, season, def, log));
     }
+    // ------------------------------------------------- Sports-Rater fan layer
+    if (p.startsWith("/api/v1/fans/") && m === "POST") {
+      const body = (await readJson(req)) as Record<string, unknown>;
+      const who = verifyIdentity(body.identity ?? body);
+      if (!who.ok) throw new HttpError(400, "invalid identity", who.errors);
+      const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() || req.socket.remoteAddress || "?";
+      const l1 = fanLimiter.take(who.identity!.fan_id);
+      const l2 = ipLimiter.take(ip);
+      if (!l1.ok || !l2.ok) {
+        res.setHeader("retry-after", String(Math.ceil(Math.max(l1.retry_after_ms, l2.retry_after_ms) / 1000)));
+        throw new HttpError(429, `slow down — ${!l1.ok ? "this handle" : "this address"} is writing too fast`, { retry_after_ms: Math.max(l1.retry_after_ms, l2.retry_after_ms) });
+      }
+      const now = new Date().toISOString();
+      if (p === "/api/v1/fans/ratings") {
+        const v = validateRate(body);
+        if (!v.ok) throw new HttpError(400, "invalid rating", v.errors);
+        const r = await rate(store, who.identity!, v.value!, now);
+        const card = CARD_SUBJECTS.find((c) => c.subject === v.value!.subject);
+        const chalk = card ? await rateSubject(store, v.value!.team, v.value!.season, card.definition, log).catch(() => null) : null;
+        const cons = await consensus(store, v.value!.team, v.value!.season, v.value!.subject, chalk?.snapshot.score ?? v.value!.chalk_score ?? null);
+        return json(res, 201, { ok: true, replaced: r.replaced, id: r.row._id, _hash: r.row._hash, chain_index: r.row.data.chain_index, consensus: cons });
+      }
+      if (p === "/api/v1/fans/reactions") {
+        const v = validateReaction(body);
+        if (!v.ok) throw new HttpError(400, "invalid reaction", v.errors);
+        const r = await react(store, who.identity!, v.value!, now);
+        return json(res, 201, { ok: true, replaced: r.replaced, id: r.row._id, _hash: r.row._hash, chain_index: r.row.data.chain_index });
+      }
+      if (p === "/api/v1/fans/posts") {
+        const v = validatePost(body);
+        if (!v.ok) throw new HttpError(400, "invalid take", v.errors);
+        const r = await post(store, who.identity!, v.value!, now);
+        return json(res, 201, { ok: true, id: r._id, _hash: r._hash, chain_index: r.data.chain_index });
+      }
+      throw new HttpError(404, `no route ${m} ${p}`);
+    }
+    if (p === "/api/v1/feed" && m === "GET") {
+      const include = (q.get("include") ?? "post,rating").split(",").filter((k): k is "post" | "rating" | "reaction" => ["post", "rating", "reaction"].includes(k));
+      const f = await feed(store, { team: q.get("team")?.toUpperCase() || undefined, limit: Math.min(200, Number(q.get("limit") ?? 50)), include });
+      return json(res, 200, { count: f.items.length, seq: f.seq, head: f.head, items: f.items.map((i) => ({ ...i, identicon: identiconSvg(i.fan_id, 32) })) });
+    }
+    if (p === "/api/v1/fans/consensus" && m === "GET") {
+      const team = need(q, "team").toUpperCase();
+      const season = Number(q.get("season") ?? defaultSeason);
+      const subjects = q.get("subject") ? [q.get("subject")!] : CARD_SUBJECTS.map((c) => c.subject);
+      const out = [];
+      for (const s of subjects) {
+        const card = CARD_SUBJECTS.find((c) => c.subject === s);
+        const chalk = card ? await rateSubject(store, team, season, card.definition, log).catch(() => null) : null;
+        out.push(await consensus(store, team, season, s, chalk?.snapshot.score ?? null));
+      }
+      return json(res, 200, { team, season, consensus: out });
+    }
+    if ((mm = p.match(/^\/api\/v1\/fans\/([0-9a-f]{64})$/)) && m === "GET") {
+      const chain = await fanChain(store, mm[1]);
+      return json(res, 200, { fan_id: mm[1], identicon: identiconSvg(mm[1], 64), ...chain });
+    }
+    if ((mm = p.match(/^\/api\/v1\/identicon\/([0-9a-f]{6,64})\.svg$/)) && m === "GET") {
+      const svg = identiconSvg(mm[1].padEnd(64, "0"), Number(q.get("size") ?? 40));
+      res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=31536000, immutable" });
+      res.end(svg);
+      return;
+    }
     if (p === "/api/v1/rating-definitions" && m === "GET") return json(res, 200, { definitions: await listDefinitions(store), rateable_metrics: (await import("../rating/definitions.ts")).RATEABLE_METRICS });
     if (p === "/api/v1/rating-definitions" && m === "POST") {
       const body = await readJson(req);
@@ -345,7 +415,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     if ((mm = p.match(/^\/api\/v1\/provenance\/([^/]+)\/([^/]+)$/)) && m === "GET") {
       const coll = decodeURIComponent(mm[1]);
       const id = decodeURIComponent(mm[2]);
-      if (!/^football_[a-z_]+$/.test(coll)) throw new HttpError(400, "collection must be a football_* collection");
+      if (!/^(football|sr)_[a-z_]+$/.test(coll)) throw new HttpError(400, "collection must be a football_* or sr_* collection");
       const rows = await store.trace(coll, id);
       if (!rows.length) throw new HttpError(404, "record not found");
       const byHash = new Map(rows.map((r) => [r._hash, r]));
@@ -571,6 +641,10 @@ function labelFor(r: NedbRow): string {
     case COLL.observations: return `observation (${d.model})`;
     case COLL.tendencies: return `tendency`;
     case COLL.comparisons: return `comparison`;
+    case "sr_posts": return `take by ${d.handle}`;
+    case "sr_ratings": return `${d.handle} rated ${d.team} ${d.subject} ${d.score}`;
+    case "sr_reactions": return `${d.handle} ${d.reaction}`;
+    case "sr_chain_tips": return `chain tip ${d.handle}`;
     default: return r._coll;
   }
 }

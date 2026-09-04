@@ -47,12 +47,13 @@ async function boot() {
   state.coach = url.searchParams.get("mode") === "coach";
   const ts = $("#team"); ts.innerHTML = state.teams.map((t) => `<option ${t === state.team ? "selected" : ""}>${t}</option>`).join("");
   const ss = $("#season"); ss.innerHTML = state.seasons.map((s) => `<option ${s === state.season ? "selected" : ""}>${s}</option>`).join("");
-  ts.onchange = () => { state.team = ts.value; syncUrl(); loadHome(); renderSuggest(); };
+  ts.onchange = () => { state.team = ts.value; syncUrl(); loadHome(); renderSuggest(); loadFeed(); };
   ss.onchange = () => { state.season = Number(ss.value); syncUrl(); loadHome(); };
   const mode = $("#mode");
   const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); };
   mode.onclick = () => { state.coach = !state.coach; syncUrl(); applyMode(); };
-  applyMode(); renderSuggest(); loadHome();
+  applyMode(); renderSuggest(); loadHome(); renderWho(); loadFeed();
+  $("#take").onsubmit = async (e) => { e.preventDefault(); const text = $("#take-text").value.trim(); if (!text) return; try { const r = await fanPost("/api/v1/fans/posts", { text, team: state.team }); if (r) { $("#take-text").value = ""; loadFeed(); } } catch (err) { alert(err.message + (err.detail ? ` — ${err.detail.join("; ")}` : "")); } };
   $("#ask").onsubmit = (e) => { e.preventDefault(); const q = $("#q").value.trim(); if (!q) return; $("#q").value = ""; ask(q); };
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-ask]"); if (b) ask(b.dataset.ask.replaceAll("Tampa", teamName(state.team))); });
   $("#rate-differently").onclick = rateDifferently;
@@ -157,10 +158,12 @@ const SUBJECT_Q = { offense: "How is the Tampa offense rated overall?", defense:
 function renderRatings(list) {
   const box = $("#ratings"); box.innerHTML = "";
   for (const r of list) {
-    const card = el(`<button class="rt ${r.provisional ? "prov" : ""}" title="${esc(r.definition_name)} · ${r.sample} sample · tap for the formula"><div class="k">${esc(r.label)}</div><div class="v">${r.score ?? "–"}<small>/100</small></div><div class="r">#${r.rank} of ${r.of}${r.top_component ? ` · ${esc(r.top_component.label.toLowerCase())} ${r.top_component.percentile}th` : ""}${r.provisional ? " · provisional" : ""}</div><div class="bar"><i style="width:${r.score ?? 0}%"></i></div></button>`);
-    card.onclick = () => ask((SUBJECT_Q[r.subject] || `How is Tampa rated on ${r.label.toLowerCase()}?`).replaceAll("Tampa", teamName(state.team)));
+    const card = el(`<div class="rt ${r.provisional ? "prov" : ""}" data-subject="${esc(r.subject)}" title="${esc(r.definition_name)} · ${r.sample} sample"><div class="k">${esc(r.label)}</div><div class="v">${r.score ?? "–"}<small>/100</small></div><div class="r">#${r.rank} of ${r.of}${r.top_component ? ` · ${esc(r.top_component.label.toLowerCase())} ${r.top_component.percentile}th` : ""}${r.provisional ? " · provisional" : ""}</div><div class="rx" style="margin-top:6px;display:flex;gap:4px"><button class="chip" data-why style="padding:4px 8px;font-size:12px">Why?</button><button class="chip" data-rate style="padding:4px 8px;font-size:12px">Rate it</button></div><div class="bar"><i style="width:${r.score ?? 0}%"></i></div></div>`);
+    card.querySelector("[data-why]").onclick = () => ask((SUBJECT_Q[r.subject] || `How is Tampa rated on ${r.label.toLowerCase()}?`).replaceAll("Tampa", teamName(state.team)));
+    card.querySelector("[data-rate]").onclick = () => rateTile(r);
     box.append(card);
   }
+  loadConsensus();
 }
 function renderScout(s, n) {
   const box = $("#scout-body"); const sub = $("#scout-sub");
@@ -173,6 +176,71 @@ function renderBadges(badges) {
   const b = $("#h-badges"); b.innerHTML = "";
   for (const x of badges) b.append(el(`<button class="badge-pill ${x.tone}" title="${esc(x.qualification_rule)} · ${x.percentile}th pct · #${x.rank} of ${x.of} · n=${x.sample}" data-ask="Why does Tampa have the ${esc(x.name.toLowerCase())} badge?">${esc(x.emoji)} ${esc(x.name)}</button>`));
   if (!badges.length) b.append(el(`<span class="muted">No badges earned — top/bottom 10% of the league on a metric earns one.</span>`));
+}
+
+// ---------------------------------------------------------------- identity
+// No account. nickname + a salt that never leaves this device -> sha256 ->
+// fan_id; handle = nick#first6. The server stores only handle + fan_id on writes.
+const ID_KEY = "sr.identity";
+function loadIdentity() { try { return JSON.parse(localStorage.getItem(ID_KEY) || "null"); } catch { return null; } }
+async function sha256hex(s) { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join(""); }
+async function createIdentity(nickname) {
+  const salt = [...crypto.getRandomValues(new Uint8Array(16))].map((x) => x.toString(16).padStart(2, "0")).join("");
+  const fan_id = await sha256hex(`${nickname}:${salt}`);
+  const id = { nickname, salt, fan_id, handle: `${nickname}#${fan_id.slice(0, 6)}` };
+  localStorage.setItem(ID_KEY, JSON.stringify(id));
+  return id;
+}
+function renderWho() {
+  const id = loadIdentity(); const b = $("#who");
+  b.innerHTML = id ? `<img src="/api/v1/identicon/${id.fan_id}.svg?size=18" alt="" /> ${esc(id.handle)}` : "rate as…";
+  b.onclick = () => whoDialog();
+}
+function whoDialog() {
+  const id = loadIdentity();
+  const card = el(`<article class="card"><header class="card-head"><div class="q">${id ? "You" : "Pick a handle"}</div></header><div class="muted">No account. Your nickname plus a secret this device keeps become a hash — that hash is your identity on every rating and take. Lose the device, lose the handle; that's the deal.</div><div class="drawer"></div></article>`);
+  const d = $(".drawer", card);
+  if (id) d.append(el(`<div class="fi"><img src="/api/v1/identicon/${id.fan_id}.svg?size=32" alt="" /><div><div class="h">${esc(id.handle)}</div><div class="t muted">${esc(id.fan_id)}</div><div class="rx"><button data-chain>Verify my chain</button><button data-forget>Forget this device</button></div></div></div>`));
+  const form = el(`<form class="who-form"><input name="nick" placeholder="nickname (letters, numbers, _ . -)" maxlength="24" pattern="[A-Za-z0-9_][A-Za-z0-9_ .\\-]{0,23}" required /><button class="chip go" type="submit">${id ? "New handle" : "Create"}</button><div class="err out"></div></form>`);
+  form.onsubmit = async (e) => { e.preventDefault(); const nick = new FormData(form).get("nick").trim(); if (!/^[A-Za-z0-9_][A-Za-z0-9_ .\-]{0,23}$/.test(nick)) { $(".out", form).textContent = "1-24 chars: letters, numbers, _ . -"; return; } await createIdentity(nick); renderWho(); card.remove(); loadFeed(); };
+  d.append(form);
+  d.querySelector("[data-forget]")?.addEventListener("click", () => { localStorage.removeItem(ID_KEY); renderWho(); card.remove(); });
+  d.querySelector("[data-chain]")?.addEventListener("click", async () => { const c = await api(`/api/v1/fans/${id.fan_id}`); const box = el(`<div></div>`); box.append(el(`<div class="h">Chain · ${c.length} writes · ${c.verified ? "every link verified" : "history in chain (re-rated)"}</div>`)); const prov = el(`<div class="prov"></div>`); for (const l of c.links) prov.append(el(`<div><span class="c">${esc(l.kind)}</span><span>#${l.chain_index} ${esc(l.created_at.slice(0, 16))}</span><span class="hsh">${esc(l.hash.slice(0, 12))} ← ${esc((l.prev || "genesis").slice(0, 12))}</span></div>`)); box.append(prov); d.append(box); });
+  $("#feed").prepend(card); card.scrollIntoView({ behavior: "smooth" });
+}
+async function requireIdentity() { const id = loadIdentity(); if (id) return id; whoDialog(); return null; }
+async function fanPost(path, body) {
+  const id = await requireIdentity(); if (!id) return null;
+  return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fan_id: id.fan_id, handle: id.handle, ...body }) });
+}
+
+// ------------------------------------------------------------------- feed
+async function loadFeed() {
+  const body = $("#feed-body"); const sub = $("#feed-sub");
+  try {
+    const f = await api(`/api/v1/feed?team=${state.team}&limit=20`);
+    sub.textContent = f.count ? `${f.count} newest · seq ${f.seq}` : "";
+    body.innerHTML = f.count ? "" : `<div class="empty">No takes yet for ${esc(state.team)}. Rate a tile or post one.</div>`;
+    for (const i of f.items) {
+      const item = el(`<div class="fi"><img src="/api/v1/identicon/${i.fan_id}.svg?size=32" alt="" /><div><div class="h">${esc(i.handle)}<small>#${i.chain_index} · ${esc(new Date(i.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}</small></div>${i.kind === "post" ? `<div class="t">${esc(i.text)}</div><div class="rx"><button data-r="like">👍 ${i.reactions?.like ?? 0}</button><button data-r="agree">agree ${i.reactions?.agree ?? 0}</button><button data-r="disagree">disagree ${i.reactions?.disagree ?? 0}</button><button data-prov>provenance</button></div>` : `<div class="t">rated ${esc(i.team)} ${esc(i.subject.replace(/_/g, " "))}${i.chalk_score !== null && i.chalk_score !== undefined ? ` · CHALK said ${i.chalk_score}` : ""}</div>`}</div>${i.kind === "rating" ? `<div class="sc">${i.score}<small>fan</small></div>` : ""}</div>`);
+      item.querySelectorAll("[data-r]").forEach((b) => { b.onclick = async () => { try { await fanPost("/api/v1/fans/reactions", { target_coll: "sr_posts", target_id: i.id, reaction: b.dataset.r }); loadFeed(); } catch (e) { alert(e.message); } }; });
+      item.querySelector("[data-prov]")?.addEventListener("click", async () => { const p = await api(`/api/v1/provenance/sr_posts/${encodeURIComponent(i.id)}`); alert(`${p.node_count} records behind this take · ${Object.entries(p.collections).map(([k, v]) => `${k}: ${v}`).join(", ")}`); });
+      body.append(item);
+    }
+  } catch (e) { body.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+async function loadConsensus() {
+  try {
+    const c = await api(`/api/v1/fans/consensus?team=${state.team}&season=${state.season}`);
+    for (const x of c.consensus) { const tile = document.querySelector(`.rt[data-subject="${x.subject}"]`); if (!tile) continue; tile.querySelector(".fan")?.remove(); if (x.fans) tile.append(el(`<div class="fan">fans <b>${x.mean}</b> · ${x.fans}</div>`)); }
+  } catch (e) { console.warn("consensus", e.message); }
+}
+function rateTile(r) {
+  const card = el(`<article class="card"><header class="card-head"><div class="q">Rate ${esc(teamName(state.team))} · ${esc(r.label)}</div><div class="badges"><span class="badge lime">CHALK ${r.score}</span></div></header><div class="muted">CHALK says ${r.score}/100 (#${r.rank} of ${r.of}). Where would you put them? Your number is stored next to CHALK's snapshot — the disagreement is the point.</div><div class="drawer"><div class="rater"><div class="big" id="rv">${r.score ?? 50}</div><input type="range" min="0" max="100" value="${r.score ?? 50}" /><div><button class="chip go">Save my rating</button> <span class="muted out"></span></div></div></div></article>`);
+  const range = card.querySelector("input[type=range]"); const big = $("#rv", card);
+  range.oninput = () => { big.textContent = range.value; };
+  $(".go", card).onclick = async () => { try { const res = await fanPost("/api/v1/fans/ratings", { team: state.team, season: state.season, subject: r.subject, score: Number(range.value), snapshot_id: r.snapshot_id, chalk_score: r.score }); if (!res) return; const c = res.consensus; $(".out", card).textContent = `saved (#${res.chain_index} in your chain) · fans ${c.mean} vs CHALK ${c.chalk_score} (${c.delta >= 0 ? "+" : ""}${c.delta}) over ${c.fans} fan${c.fans === 1 ? "" : "s"}`; loadConsensus(); loadFeed(); } catch (e) { $(".out", card).textContent = e.message; } };
+  $("#feed").prepend(card); card.scrollIntoView({ behavior: "smooth" });
 }
 
 // ------------------------------------------------------------------- ask
@@ -213,6 +281,12 @@ async function ask(question) {
     catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   };
   $(".act-coach", card).onclick = () => card.classList.toggle("coach-on");
+  card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => {
+    const coll = observation?.id ? "football_observations" : evidence?.calculation_ids?.[0] ? (evidence.kind === "tendency" ? "football_tendencies" : evidence.kind === "comparison" ? "football_comparisons" : evidence.kind === "rating" ? "football_ratings" : "football_analyses") : null;
+    const id = observation?.id || evidence?.calculation_ids?.[0];
+    if (!coll || !id) { b.textContent = "nothing stored to react to"; return; }
+    try { const r = await fanPost("/api/v1/fans/reactions", { target_coll: coll, target_id: id, reaction: b.dataset.kind }); if (r) { b.classList.add("on"); b.textContent = `${b.dataset.kind === "agree" ? "👍" : "👎"} ${r.replaced ? "changed" : "saved"} · #${r.chain_index}`; } } catch (e) { b.textContent = e.message; }
+  }; });
   $(".act-plan", card).onclick = () => { drawer.innerHTML = `<div class="h">Query plan</div><pre class="code">${esc(JSON.stringify(planInfo, null, 2))}</pre>`; };
   $(".act-provenance", card).onclick = async () => {
     if (!evidence) return;

@@ -4,6 +4,35 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.4.0 · Sports-Rater fan layer
+
+### SHIPPED
+
+- **Identity without accounts** (`src/fans/identity.ts`): `fan_id = sha256(nickname:salt)` computed on the device (WebCrypto), salt in localStorage, handle `nick#xxxxxx`; server verifies shape + suffix only, stores nothing but handle + fan_id on writes. Deterministic 5×5 identicon SVG at `/api/v1/identicon/{fan_id}.svg`.
+- **Fan writes** (`src/fans/fans.ts`): `sr_ratings` (0–100 per team/subject, replaces on re-rate, freezes CHALK's score at the moment), `sr_reactions` (like/agree/disagree on any football_* or sr_* record), `sr_posts` (≤280 chars, no links). Every write is `caused_by` its target's hash AND the fan's previous write; `sr_chain_tips` holds each fan's tip so the chain is O(1) to extend.
+- **Reads**: `/feed` newest-first with reaction counts and identicons; `/fans/consensus` mean/median/distribution vs CHALK per subject; `/fans/{fan_id}` walks the chain tip→genesis verifying each `prev`.
+- **Anti-spam**: token buckets — 20 burst / 1 per 10s per handle, 60 / 1 per 5s per address; 429 with Retry-After.
+- **Client**: "rate as…" handle chip (create / verify my chain / forget device), **Rate it** on every rating tile (slider → saved → "fans 70 vs CHALK 48"), fans' mean on tiles, agree/disagree on every answer card (attached to the stored observation), take box + Fans tile with reactions and provenance.
+- Tests: **54** (4 new: identity/identicon, rate limiter, validators, full chain/feed/consensus/TRACE integration on in-memory nedbd).
+
+### VERIFIED ON THE REAL SYSTEM
+
+- dad#… rated TB offense 70 against snapshot `rating_…` (CHALK 48) → consensus fans 70 vs 48 (+22, 1 fan); posted a take `caused_by` that snapshot; sarah#… disagreed; spoofed handle (`dad#000000`) rejected 400; feed shows both with identicons; dad's chain length 2, every link verified; `TRACE` from the take reaches `football_ratings` → `football_rating_definitions`; 21 rapid reactions → 20×201/200 then 429.
+
+### DISCOVERED
+
+1. Re-rating is a new version of the same id, so the fan's chain contains a hash that is now *history* (not the current version). The chain walk reports exactly that instead of pretending — same NEDB fact as the play-versions episode, now used on purpose.
+2. Consensus is "latest rating per fan" for free, because ratings are keyed by fan+team+subject and NQL returns latest versions.
+
+### NEXT
+
+1. Live deviation card on game day (Sept 10) via `chalk watch --season 2026`.
+2. Per-subject rating trends; fan consensus trend alongside.
+3. Hashcash stamps if bots arrive; moderation = hide-by-hash list (never delete — history).
+4. Sports-Rater domain deploy (sports-rater.com) on Mark's VPS behind nginx, nedbd as a tmux/systemd service.
+
+---
+
 ## 2026-09-04 — v0.3.0 · the rating card, power rankings, scout card, watch loop
 
 ### SHIPPED
