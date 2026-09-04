@@ -11,7 +11,7 @@ export function openapiDocument(baseUrl: string) {
     openapi: "3.1.0",
     info: {
       title: "CHALK — Sports-Rater Football Intelligence API",
-      version: "0.4.0",
+      version: "0.5.0",
       description:
         "Deterministic football analytics over an NEDB provenance store. The database knows. Deterministic code calculates. The model interprets. Provenance proves. Every analysis, rating, play and model observation is addressable and traceable to raw source records.",
       license: { name: "BUSL-1.1" },
@@ -46,6 +46,7 @@ export function openapiDocument(baseUrl: string) {
       "/api/v1/ratings/third-down/league": { get: { tags: ["ratings"], summary: "League table under a definition", parameters: [q("season", "integer"), q("definition", "string"), q("side", "string")], responses: ok("League") } },
       "/api/v1/ratings/compare": { get: { tags: ["ratings"], summary: "Explain why two definitions disagree on a team", parameters: [q("team", "string", true), q("season", "integer"), q("a", "string", true), q("b", "string", true)], responses: ok("RatingCompare") } },
       "/api/v1/ratings/{subject}": { get: { tags: ["ratings"], summary: "Rating for a subject: offense | defense | red-zone | explosiveness | ball-security (third-down has its own route). Snapshot with formula, normalization, population, sample, plus the team's metric profile.", parameters: [p("subject"), q("team", "string", true), q("season", "integer"), q("definition", "string")], responses: ok("Rating") } },
+      "/api/v1/ratings/{subject}/trend": { get: { tags: ["ratings"], summary: "Any subject's rating week over week, as known then", parameters: [p("subject"), q("team", "string", true), q("season", "integer"), q("definition", "string")], responses: ok("Trend") } },
       "/api/v1/rankings": { get: { tags: ["ratings"], summary: "Power rankings under a definition (default offense), with movement vs the as-known-then snapshot one week earlier, risers and fallers", parameters: [q("season", "integer"), q("definition", "string")], responses: ok("Rankings") } },
       "/api/v1/ratings/third-down/trend": { get: { tags: ["ratings"], summary: "Rating week over week, as known then (only plays through each week, for the team and the league)", parameters: [q("team", "string", true), q("season", "integer"), q("definition", "string"), q("side", "string")], responses: ok("Trend") } },
       "/api/v1/badges": { get: { tags: ["ratings"], summary: "Deterministic league-relative badges earned by a team, with qualification rules", parameters: [q("team", "string", true), q("season", "integer")], responses: ok("Badges") } },

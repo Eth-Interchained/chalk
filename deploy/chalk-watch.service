@@ -1,0 +1,25 @@
+# /etc/systemd/system/chalk-watch.service — the only polling loop:
+# re-ingest the current season (idempotent) + a pulse tick every 30 minutes.
+# The API server notices new ingest/pulse events and drops its caches.
+[Unit]
+Description=CHALK watch (season re-ingest + pulse)
+After=network.target nedbd-chalk.service
+Requires=nedbd-chalk.service
+
+[Service]
+Type=simple
+User=chalk
+Group=chalk
+WorkingDirectory=/opt/chalk
+EnvironmentFile=/opt/chalk/.env
+Environment=NEDB_URL=http://127.0.0.1:7070
+Environment=CHALK_AUTOSTART_NEDB=0
+ExecStart=/usr/bin/node /opt/chalk/bin/chalk.ts watch --season ${CHALK_WATCH_SEASON} --interval ${CHALK_WATCH_INTERVAL}
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
