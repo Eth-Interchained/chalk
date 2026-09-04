@@ -203,10 +203,11 @@ export function validatePlan(input: unknown, ctx: PlanContext): { ok: boolean; p
       if (intent === "third_down") f.down = [3];
       const v = validateFilter(f);
       if (!v.ok) errors.push(...v.errors.map((e) => `filters.${e}`));
-      if (v.unknown_keys.length && intent !== "rating") {
-        const allowedExtra = new Set(["definition_id"]);
+      {
+        const allowedExtra = new Set(intent === "rating" ? ["definition_id", "subject"] : []);
         const bad = v.unknown_keys.filter((k) => !allowedExtra.has(k));
         if (bad.length) errors.push(`filters: unknown keys ${bad.join(", ")}`);
+        if (intent === "rating" && f.subject !== undefined && !["third_down", "offense", "defense", "red_zone", "explosiveness", "ball_security"].includes(String(f.subject))) errors.push(`filters.subject: unknown ${JSON.stringify(f.subject)}`);
       }
       if (errors.length) return { ok: false, errors };
       return { ok: true, plan: { ...base, filters: f, filter: v.filter }, errors: [] };
@@ -312,7 +313,10 @@ export function rulePlan(question: string, ctx: PlanContext): Omit<QueryPlan, "l
     if (opponent) return mk("opponent_report", { team: ctx.default_team, opponent, season, side: /their defen[cs]e|against their d/.test(q) ? "defense" : "offense" });
   }
   if (/why .*(disagree|different)|rating.*(vs|versus|compare)|compare.*rating/.test(q)) return null; // needs explicit ids — UI path
-  if (/\brating|rated|grade|score out of\b/.test(q) && /third|3rd/.test(q)) return mk("rating", { team, season });
+  if (/\brating|rated|grade|score out of|badge\b/.test(q)) {
+    const subject = /third|3rd/.test(q) ? "third_down" : /red.?zone/.test(q) ? "red_zone" : /explosiv/.test(q) ? "explosiveness" : /ball security|turnover|giveaway/.test(q) ? "ball_security" : /defen[cs]e/.test(q) ? "defense" : /offen[cs]e|overall/.test(q) ? "offense" : null;
+    if (subject) return mk("rating", { team, season, subject });
+  }
   if (/\b(compare|vs\.?|versus|than last (season|year)|this (season|year) (vs|versus|against|to) last)\b/.test(q)) {
     if (/last (season|year)|this (season|year)/.test(q)) {
       return mk("comparison", { a: { team, season: season - 1, side }, b: { team, season, side } });

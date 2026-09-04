@@ -19,7 +19,8 @@ import { runThirdDown, summarizeThirdDown } from "../engine/thirddown.ts";
 import type { EvidencePackage } from "../llm/explain.ts";
 import type { QueryPlan } from "../llm/planner.ts";
 import type { Game, Play } from "../model/football.ts";
-import { THIRD_DOWN_DEFAULT_V1 } from "../rating/definitions.ts";
+import { CARD_SUBJECTS, THIRD_DOWN_DEFAULT_V1 } from "../rating/definitions.ts";
+import { rateSubject } from "../rating/rank.ts";
 import { compareDefinitions, loadDefinition, rateThirdDown, type RateResult } from "../rating/league.ts";
 import type { RatingSnapshot } from "../rating/rating.ts";
 import { COLL } from "../store/collections.ts";
@@ -284,26 +285,52 @@ export async function execute(plan: QueryPlan, ctx: ExecContext): Promise<ExecRe
     }
     case "rating": {
       const f = plan.filter!;
-      const defId = typeof plan.filters.definition_id === "string" ? plan.filters.definition_id : THIRD_DOWN_DEFAULT_V1.id;
-      const def = (await loadDefinition(store, defId)) ?? THIRD_DOWN_DEFAULT_V1;
-      const r = await rateThirdDown(store, f.team, f.season!, def, f.side, log);
-      if (!r) throw new Error(`no third-down data for ${f.team} ${f.season}`);
+      const subject = typeof plan.filters.subject === "string" ? plan.filters.subject : "third_down";
+      const card = CARD_SUBJECTS.find((c) => c.subject === subject) ?? CARD_SUBJECTS.find((c) => c.subject === "third_down")!;
+      const defId = typeof plan.filters.definition_id === "string" ? plan.filters.definition_id : card.definition.id;
+      const def = (await loadDefinition(store, defId)) ?? card.definition;
+      if (def.subject === "third_down") {
+        const r = await rateThirdDown(store, f.team, f.season!, def, f.side, log);
+        if (!r) throw new Error(`no third-down data for ${f.team} ${f.season}`);
+        const s = r.snapshot;
+        const top = [...s.components].sort((x, y) => (y.contribution ?? 0) - (x.contribution ?? 0))[0];
+        return {
+          package: {
+            kind: "rating",
+            summary: { rating: summarizeRating(r), analysis: summarizeThirdDown(r.analysis), formula_notes: def.notes ?? null, league_top5: r.league.slice(0, 5), league_bottom3: r.league.slice(-3) },
+            calculation_ids: [s.id, r.analysis.id],
+            calculation_hashes: [r.stored_hash],
+            evidence_ids: r.analysis.evidence,
+            deterministic_statements: [
+              `${f.team} Third Down Rating: ${s.score}/100 under "${def.name}" v${def.version} — rank ${r.rank} of ${r.population.length} (${s.normalization} normalization, ${s.sample_size} third downs).`,
+              ...(top ? [`Largest contributor: ${top.label} at the ${ordinalPct(top.normalized)} percentile, worth ${round(top.contribution, 1)} of the ${s.score} points.`] : []),
+              ...(s.provisional ? [`Provisional: sample below the definition's minimum of ${def.min_sample}.`] : []),
+            ],
+          },
+          detail: { snapshot: s, analysis: r.analysis, definition: def, league: r.league, rank: r.rank },
+        };
+      }
+      const r = await rateSubject(store, f.team, f.season!, def, log);
+      if (!r) throw new Error(`no ${f.season} data for ${f.team}`);
       const s = r.snapshot;
+      const comps = s.components.map((c) => ({ metric: c.metric, label: c.label, weight_pct: Math.round(c.weight * 100), raw: c.metric.includes("rate") ? pct(c.raw) : round(c.raw, 3), raw_unit: c.metric.includes("rate") ? "%" : "raw", league_median: c.metric.includes("rate") ? pct(c.population_median) : round(c.population_median, 3), percentile: c.normalized === null ? null : Math.round(c.normalized * 100), rank: c.rank, points: round(c.contribution, 1), direction: c.direction }));
       const top = [...s.components].sort((x, y) => (y.contribution ?? 0) - (x.contribution ?? 0))[0];
+      const weakest = [...s.components].filter((c) => c.normalized !== null).sort((x, y) => (x.normalized ?? 0) - (y.normalized ?? 0))[0];
       return {
         package: {
           kind: "rating",
-          summary: { rating: summarizeRating(r), analysis: summarizeThirdDown(r.analysis), formula_notes: def.notes ?? null, league_top5: r.league.slice(0, 5), league_bottom3: r.league.slice(-3) },
-          calculation_ids: [s.id, r.analysis.id],
+          summary: { rating: { team: f.team, subject: def.subject, definition: def.name, definition_id: def.id, score: s.score, rank: r.rank, of: r.population, sample_size: s.sample_size, provisional: s.provisional, normalization: `${s.normalization}@${s.normalization_version}`, components: comps }, formula_notes: def.notes ?? null, league_top5: r.league.slice(0, 5), league_bottom3: r.league.slice(-3), profile: r.profile ? { snaps: r.profile.attempts, games: r.profile.games, epa_per_play: round(r.profile.epa_per_play, 3), success_pct: pct(r.profile.success_rate), explosive_pct: pct(r.profile.explosive_rate), turnover_pct: pct(r.profile.turnover_rate), third_down_pct: pct(r.profile.third_down_conversion_rate), red_zone_td_pct: pct(r.profile.red_zone_touchdown_rate), red_zone_snaps: r.profile.red_zone_attempts, points_per_game: round(r.profile.points_per_game, 1) } : null },
+          calculation_ids: [s.id],
           calculation_hashes: [r.stored_hash],
-          evidence_ids: r.analysis.evidence,
+          evidence_ids: [],
           deterministic_statements: [
-            `${f.team} Third Down Rating: ${s.score}/100 under "${def.name}" v${def.version} — rank ${r.rank} of ${r.population.length} (${s.normalization} normalization, ${s.sample_size} third downs).`,
-            ...(top ? [`Largest contributor: ${top.label} at the ${Math.round((top.normalized ?? 0) * 100)}th percentile, worth ${round(top.contribution, 1)} of the ${s.score} points.`] : []),
+            `${f.team} ${card.label} Rating: ${s.score}/100 under "${def.name}" v${def.version} — rank ${r.rank} of ${r.population} (${s.normalization}, ${s.sample_size} ${def.subject === "red_zone" ? "red-zone snaps" : "snaps"}).`,
+            ...(top ? [`Largest contributor: ${top.label} at the ${ordinalPct(top.normalized)} percentile, worth ${round(top.contribution, 1)} points.`] : []),
+            ...(weakest && weakest !== top ? [`Weakest component: ${weakest.label} at the ${ordinalPct(weakest.normalized)} percentile (raw ${weakest.metric.includes("rate") ? `${pct(weakest.raw)}%` : round(weakest.raw, 3)}, league median ${weakest.metric.includes("rate") ? `${pct(weakest.population_median)}%` : round(weakest.population_median, 3)}).`] : []),
             ...(s.provisional ? [`Provisional: sample below the definition's minimum of ${def.min_sample}.`] : []),
           ],
         },
-        detail: { snapshot: s, analysis: r.analysis, definition: def, league: r.league, rank: r.rank },
+        detail: { snapshot: s, definition: def, league: r.league, rank: r.rank, profile: r.profile },
       };
     }
     case "rating_compare": {
@@ -337,6 +364,13 @@ export async function execute(plan: QueryPlan, ctx: ExecContext): Promise<ExecRe
 async function findRawByHash(store: ChalkStore, coll: string, hash: string, gameId: string): Promise<NedbRow<RawDoc> | null> {
   const rows = await store.query<RawDoc>(`FROM ${coll} WHERE source_record_id_game = ${nqlStr(gameId)}`);
   return rows.find((r) => r._hash === hash) ?? null;
+}
+
+/** 42 -> "42nd", 23 -> "23rd", 11 -> "11th" — for percentiles in prose. */
+function ordinalPct(p: number | null): string {
+  const n = Math.round((p ?? 0) * 100);
+  const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
+  return `${n}${suffix}`;
 }
 
 function ordinal(n: number | null): string {

@@ -25,6 +25,7 @@ import { compileNql, validateFilter } from "../src/engine/situation.ts";
 import { startServer } from "../src/server/app.ts";
 import { TheSportsDBSource } from "../src/source/pulse.ts";
 import { pulseLoop, pulseTick } from "../src/ingest/pulse.ts";
+import { rankings } from "../src/rating/rank.ts";
 import { COLL } from "../src/store/collections.ts";
 import type { Game, Play } from "../src/model/football.ts";
 
@@ -199,6 +200,48 @@ async function main() {
       }
       return;
     }
+    case "watch": {
+      // Knowledge-layer + pulse loop: re-ingest the season (idempotent — only
+      // new/changed games write) and take a pulse tick, on a cadence. This is
+      // the only place polling lives (V3 §18, §20).
+      const { store, stop } = await boot();
+      const season = num("season");
+      if (!season) throw new Error("--season required");
+      const interval = num("interval", 1800) ?? 1800;
+      const source = new NFLDataSource({ onRequest: (i) => { if (i.status !== 200) log(`  HTTP ${i.status} ${i.url}`); } });
+      const pulse = new TheSportsDBSource({});
+      log(`watch season ${season} every ${interval}s (ingest + pulse) — Ctrl-C to stop`);
+      const ctl = new AbortController();
+      process.on("SIGINT", () => { ctl.abort(); stop(); process.exit(0); });
+      while (!ctl.signal.aborted) {
+        const t0 = Date.now();
+        try {
+          const r = await ingest({ store, source, scope: { season, deep: flags.deep === true }, log: () => {} });
+          const knownGames = (await store.query<Game>(`FROM ${COLL.games}`)).map((g) => g.data);
+          const pt = await pulseTick({ store, source: pulse, knownGames, log: () => {} });
+          process.stdout.write(JSON.stringify({ at: new Date().toISOString(), season, games_with_results: r.games_fetched, plays_new: r.normalized_written, plays_dup: r.raw_duplicates, changed: r.raw_changed, errors: r.errors.length, pulse_obs: pt.observations, pulse_changed: pt.raw_changed, live: pt.live_games, seq: pt.nedb_seq, ms: Date.now() - t0 }) + "\n");
+        } catch (e) {
+          log(`watch tick failed: ${(e as Error).message}`);
+        }
+        await new Promise((r) => setTimeout(r, interval * 1000));
+      }
+      return;
+    }
+    case "rankings": {
+      const { store, stop } = await boot();
+      try {
+        const season = num("season");
+        if (!season) throw new Error("--season required");
+        const def = (await loadDefinition(store, str("definition", "offense_default@1.0.0")!));
+        if (!def) throw new Error("unknown definition");
+        const r = await rankings(store, season, def, log);
+        process.stdout.write(`${r.definition.name} v${r.definition.version} · ${season} through week ${r.through_week}\n`);
+        for (const row of r.rows) process.stdout.write(`${String(row.rank).padStart(2)}. ${row.team.padEnd(4)} ${String(row.score ?? "—").padStart(3)}  ${row.movement === null ? "  " : row.movement > 0 ? `↑${row.movement}` : row.movement < 0 ? `↓${-row.movement}` : "—"}${row.provisional ? " *" : ""}\n`);
+      } finally {
+        stop();
+      }
+      return;
+    }
     case "verify": {
       const { store, stop } = await boot();
       try {
@@ -227,7 +270,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write(`chalk — football intelligence engine\n\nusage:\n  chalk ingest --season 2025 [--team TB] [--game ID] [--deep]\n  chalk analyze --team TB --season 2025 [--game ID] [--side defense]\n  chalk rate --team TB --season 2025 [--definition ID]\n  chalk scan --team TB --season 2025\n  chalk league --season 2025\n  chalk pulse [--watch] [--interval 120]      near-live game state (TheSportsDB)\n  chalk verify\n  chalk serve [--port 4040] [--host 127.0.0.1]\n`);
+      process.stdout.write(`chalk — football intelligence engine\n\nusage:\n  chalk ingest --season 2025 [--team TB] [--game ID] [--deep]\n  chalk analyze --team TB --season 2025 [--game ID] [--side defense]\n  chalk rate --team TB --season 2025 [--definition ID]\n  chalk scan --team TB --season 2025\n  chalk league --season 2025\n  chalk pulse [--watch] [--interval 120]      near-live game state (TheSportsDB)\n  chalk watch --season 2026 [--interval 1800] re-ingest + pulse on a cadence\n  chalk rankings --season 2025 [--definition offense_default@1.0.0]\n  chalk verify\n  chalk serve [--port 4040] [--host 127.0.0.1]\n`);
       process.exit(cmd ? 1 : 0);
   }
 }

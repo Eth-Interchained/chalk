@@ -68,7 +68,7 @@ async function loadHome(defId) {
   $("#h-abbr").textContent = state.team;
   $("#h-name").textContent = TEAMS[state.team]?.[0] ?? "";
   $("#rc-score").textContent = "…";
-  ["#h-badges", "#form-body", "#last-body", "#next-body", "#weak-body", "#rc-components", "#trend-headline"].forEach((s) => { $(s).innerHTML = ""; });
+  ["#h-badges", "#form-body", "#last-body", "#next-body", "#weak-body", "#rc-components", "#trend-headline", "#ratings", "#scout-body"].forEach((s) => { $(s).innerHTML = ""; });
   $("#trend-svg").innerHTML = "";
   try {
     const h = await api(`/api/v1/teams/${state.team}/home?season=${state.season}${defId ? `&definition=${encodeURIComponent(defId)}` : ""}`);
@@ -80,6 +80,8 @@ async function loadHome(defId) {
     renderNext(h.next_game);
     renderWeak(h);
     renderBadges(h.badges);
+    renderRatings(h.ratings);
+    renderScout(h.scout, h.next_game);
   } catch (e) {
     $("#rc-score").textContent = "–";
     $("#rc-line1").innerHTML = `<span class="err">${esc(e.message)}</span>`;
@@ -150,6 +152,22 @@ function renderWeak(h) {
   b.innerHTML = "";
   for (const w of h.weakest) b.append(el(`<div class="weak-row" data-ask="What does Tampa do in this situation: ${esc(w.situation)}"><div>${esc(w.situation)}<div class="n">${w.snaps} snaps</div></div><div class="epa">${signed(w.epa_vs_team, 2)} EPA</div></div>`));
   for (const s of h.strongest.slice(0, 1)) b.append(el(`<div class="weak-row" data-ask="What does Tampa do in this situation: ${esc(s.situation)}"><div>${esc(s.situation)}<div class="n">${s.snaps} snaps · strongest</div></div><div class="epa good">${signed(s.epa_vs_team, 2)} EPA</div></div>`));
+}
+const SUBJECT_Q = { offense: "How is the Tampa offense rated overall?", defense: "Grade the Tampa defense", third_down: "How does Tampa's third-down rating break down?", red_zone: "What is Tampa's red zone rating?", explosiveness: "How explosive is Tampa's offense rated?", ball_security: "What is Tampa's ball security rating?" };
+function renderRatings(list) {
+  const box = $("#ratings"); box.innerHTML = "";
+  for (const r of list) {
+    const card = el(`<button class="rt ${r.provisional ? "prov" : ""}" title="${esc(r.definition_name)} · ${r.sample} sample · tap for the formula"><div class="k">${esc(r.label)}</div><div class="v">${r.score ?? "–"}<small>/100</small></div><div class="r">#${r.rank} of ${r.of}${r.top_component ? ` · ${esc(r.top_component.label.toLowerCase())} ${r.top_component.percentile}th` : ""}${r.provisional ? " · provisional" : ""}</div><div class="bar"><i style="width:${r.score ?? 0}%"></i></div></button>`);
+    card.onclick = () => ask((SUBJECT_Q[r.subject] || `How is Tampa rated on ${r.label.toLowerCase()}?`).replaceAll("Tampa", teamName(state.team)));
+    box.append(card);
+  }
+}
+function renderScout(s, n) {
+  const box = $("#scout-body"); const sub = $("#scout-sub");
+  if (!s) { box.innerHTML = `<div class="empty">${n?.opponent ? `No ${state.season} plays ingested for ${esc(n.opponent)} yet.` : "No upcoming opponent found."}</div>`; return; }
+  sub.textContent = `${TEAMS[s.opponent]?.[0] ?? s.opponent} offense · ${s.snaps} snaps`;
+  const stat = (k, v) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  box.innerHTML = `<div class="scout-body"><div class="scout-abbr">${esc(s.opponent)}</div><div><div class="scout-stats">${stat("pass", fmtPct(s.pass_pct))}${stat("EPA / play", fmtNum(s.epa_per_play, 3))}${s.shotgun_pct !== null ? stat("shotgun", fmtPct(s.shotgun_pct)) : ""}${s.personnel ? stat("top personnel", esc(s.personnel)) : ""}${s.third_medium ? stat("3rd & 4–6 pass", `${fmtPct(s.third_medium.pass_pct)} <small class="muted">${s.third_medium.snaps} snaps</small>`) : ""}</div><div class="scout-lines">${s.weakest ? `<div>Weakest: ${esc(s.weakest)}</div>` : ""}${s.strongest ? `<div>Strongest: ${esc(s.strongest)}</div>` : ""}</div><div style="margin-top:10px"><button class="chip" data-ask="What should I know about the ${esc(s.opponent)} offense?">Full scouting report</button> <button class="chip" data-ask="What should I know about the ${esc(s.opponent)} defense?">Their defense</button></div></div></div>`;
 }
 function renderBadges(badges) {
   const b = $("#h-badges"); b.innerHTML = "";

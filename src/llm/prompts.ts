@@ -18,7 +18,7 @@ Available intents:
 - "situation_scan": which situations hurt or help a team most. Filters: team, season|game_id, side.
 - "game_summary": explain a specific game. Filters: game_id, team.
 - "play_explain": explain a specific play. Filters: play_id (format GAME_ID:PLAY_ID).
-- "rating": the team's Third Down Rating and how it is built. Filters: team, season, definition_id (optional).
+- "rating": a team's rating and how it is built. Filters: team, season, subject (one of offense|defense|third_down|red_zone|explosiveness|ball_security; default third_down), definition_id (optional).
 - "rating_compare": why two rating definitions disagree. Filters: team, season, a (definition id), b (definition id).
 - "opponent_report": scout an opponent — their tendencies by situation, formation/personnel usage, weak and strong spots. Filters: team, opponent (required; if the user says "this week's opponent" and context has next_opponent, use it), season, side ("offense" = their offense, default; "defense" = their defense).
 - "unsupported": the question needs data CHALK does not have (coverage shells, injuries, player tracking, video). Provide "reason".

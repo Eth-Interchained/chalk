@@ -15,7 +15,7 @@ import type { MetricBundle } from "../engine/metrics.ts";
 import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
 import { ChalkStore, type NedbRow } from "../store/nedb.ts";
-import type { RatingDefinition } from "./definitions.ts";
+import type { RatingDefinition, RatingSubject } from "./definitions.ts";
 import { percentileRank } from "./normalize.ts";
 
 export interface PopulationMember {
@@ -48,7 +48,7 @@ export interface RatingComponentResult {
 export interface RatingSnapshot {
   id: string;
   subject_key: string;
-  subject: "third_down";
+  subject: RatingSubject;
   definition_id: string;
   definition_version: string;
   definition_name: string;

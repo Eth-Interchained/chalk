@@ -31,12 +31,15 @@ export interface RatingComponent {
   label: string;
 }
 
+export type RatingSubject = "third_down" | "offense" | "red_zone" | "explosiveness" | "ball_security" | "defense";
+export const RATING_SUBJECTS: readonly RatingSubject[] = ["offense", "third_down", "red_zone", "explosiveness", "ball_security", "defense"];
+
 export interface RatingDefinition {
   id: string;
   name: string;
   version: string;
-  /** Which analysis kind supplies the metrics. */
-  subject: "third_down";
+  /** Which metric surface supplies the components (see rating/subjects.ts). */
+  subject: RatingSubject;
   components: RatingComponent[];
   normalization: "percentile_rank";
   normalization_version: string;
@@ -95,17 +98,127 @@ export const THIRD_DOWN_EXPLOSIVE_V1: RatingDefinition = {
   notes: "Rewards chunk plays and punishes giveaways; treats the conversion checkbox as secondary.",
 };
 
-export const BUILTIN_DEFINITIONS: RatingDefinition[] = [THIRD_DOWN_DEFAULT_V1, THIRD_DOWN_EXPLOSIVE_V1];
+/**
+ * Offense Default v1 — the spec's placeholder weights (V2 §15), kept because
+ * they read like a coach's priorities: efficiency first, then chunk plays, then
+ * the two situational units, then giveaways. All league-relative percentiles.
+ */
+export const OFFENSE_DEFAULT_V1: RatingDefinition = {
+  id: "offense_default@1.0.0",
+  name: "Sports-Rater Offense",
+  version: "1.0.0",
+  subject: "offense",
+  components: [
+    { metric: "epa_per_play", weight: 0.3, direction: "higher_is_better", label: "EPA / play" },
+    { metric: "success_rate", weight: 0.2, direction: "higher_is_better", label: "Success rate" },
+    { metric: "explosive_rate", weight: 0.15, direction: "higher_is_better", label: "Explosive rate" },
+    { metric: "third_down_conversion_rate", weight: 0.15, direction: "higher_is_better", label: "Third down" },
+    { metric: "red_zone_touchdown_rate", weight: 0.1, direction: "higher_is_better", label: "Red zone TD rate" },
+    { metric: "turnover_rate", weight: 0.1, direction: "lower_is_better", label: "Turnover rate" },
+  ],
+  normalization: "percentile_rank",
+  normalization_version: PERCENTILE_RANK_VERSION,
+  min_sample: 300,
+  author: "sports-rater",
+  created_at: "2026-09-04T00:00:00Z",
+  notes: "EPA and success carry half the weight because they price every snap; explosive plays and the two situational units add what averages hide; turnovers are the tax.",
+};
 
-export const RATEABLE_METRICS: Record<string, { label: string; default_direction: Direction }> = {
-  conversion_rate: { label: "Conversion rate", default_direction: "higher_is_better" },
-  epa_per_play: { label: "EPA / play", default_direction: "higher_is_better" },
-  success_rate: { label: "Success rate", default_direction: "higher_is_better" },
-  yards_per_play: { label: "Yards / play", default_direction: "higher_is_better" },
-  explosive_rate: { label: "Explosive rate", default_direction: "higher_is_better" },
-  turnover_rate: { label: "Turnover rate", default_direction: "lower_is_better" },
-  touchdown_rate: { label: "Touchdown rate", default_direction: "higher_is_better" },
-  pass_rate: { label: "Pass rate", default_direction: "higher_is_better" },
+export const RED_ZONE_DEFAULT_V1: RatingDefinition = {
+  id: "red_zone_default@1.0.0",
+  name: "Sports-Rater Red Zone",
+  version: "1.0.0",
+  subject: "red_zone",
+  components: [
+    { metric: "red_zone_touchdown_rate", weight: 0.5, direction: "higher_is_better", label: "TD rate per snap" },
+    { metric: "red_zone_epa_per_play", weight: 0.3, direction: "higher_is_better", label: "EPA / play" },
+    { metric: "red_zone_success_rate", weight: 0.2, direction: "higher_is_better", label: "Success rate" },
+  ],
+  normalization: "percentile_rank",
+  normalization_version: PERCENTILE_RANK_VERSION,
+  min_sample: 40,
+  author: "sports-rater",
+  created_at: "2026-09-04T00:00:00Z",
+  notes: "Touchdowns are the point of the red zone; EPA and success keep a team honest that stalls to field goals.",
+};
+
+export const EXPLOSIVENESS_V1: RatingDefinition = {
+  id: "explosiveness@1.0.0",
+  name: "Explosiveness",
+  version: "1.0.0",
+  subject: "explosiveness",
+  components: [{ metric: "explosive_rate", weight: 1, direction: "higher_is_better", label: "Explosive rate (pass 20+, run 12+)" }],
+  normalization: "percentile_rank",
+  normalization_version: PERCENTILE_RANK_VERSION,
+  min_sample: 300,
+  author: "sports-rater",
+  created_at: "2026-09-04T00:00:00Z",
+};
+
+export const BALL_SECURITY_V1: RatingDefinition = {
+  id: "ball_security@1.0.0",
+  name: "Ball Security",
+  version: "1.0.0",
+  subject: "ball_security",
+  components: [{ metric: "turnover_rate", weight: 1, direction: "lower_is_better", label: "Turnovers per snap" }],
+  normalization: "percentile_rank",
+  normalization_version: PERCENTILE_RANK_VERSION,
+  min_sample: 300,
+  author: "sports-rater",
+  created_at: "2026-09-04T00:00:00Z",
+};
+
+/** Defense: the offense surface over plays the team defended, directions flipped. */
+export const DEFENSE_DEFAULT_V1: RatingDefinition = {
+  id: "defense_default@1.0.0",
+  name: "Sports-Rater Defense",
+  version: "1.0.0",
+  subject: "defense",
+  components: [
+    { metric: "epa_per_play", weight: 0.3, direction: "lower_is_better", label: "EPA / play allowed" },
+    { metric: "success_rate", weight: 0.2, direction: "lower_is_better", label: "Success rate allowed" },
+    { metric: "explosive_rate", weight: 0.15, direction: "lower_is_better", label: "Explosive rate allowed" },
+    { metric: "third_down_conversion_rate", weight: 0.15, direction: "lower_is_better", label: "Third down allowed" },
+    { metric: "red_zone_touchdown_rate", weight: 0.1, direction: "lower_is_better", label: "Red zone TD rate allowed" },
+    { metric: "turnover_rate", weight: 0.1, direction: "higher_is_better", label: "Takeaway rate" },
+  ],
+  normalization: "percentile_rank",
+  normalization_version: PERCENTILE_RANK_VERSION,
+  min_sample: 300,
+  author: "sports-rater",
+  created_at: "2026-09-04T00:00:00Z",
+  notes: "Mirror of the offense formula over the snaps this defense faced.",
+};
+
+export const BUILTIN_DEFINITIONS: RatingDefinition[] = [
+  OFFENSE_DEFAULT_V1, THIRD_DOWN_DEFAULT_V1, THIRD_DOWN_EXPLOSIVE_V1, RED_ZONE_DEFAULT_V1, EXPLOSIVENESS_V1, BALL_SECURITY_V1, DEFENSE_DEFAULT_V1,
+];
+
+/** The card order for the Home rating list: one built-in per subject. */
+export const CARD_SUBJECTS: Array<{ subject: RatingSubject; definition: RatingDefinition; label: string }> = [
+  { subject: "offense", definition: OFFENSE_DEFAULT_V1, label: "Offense" },
+  { subject: "defense", definition: DEFENSE_DEFAULT_V1, label: "Defense" },
+  { subject: "third_down", definition: THIRD_DOWN_DEFAULT_V1, label: "Third Down" },
+  { subject: "red_zone", definition: RED_ZONE_DEFAULT_V1, label: "Red Zone" },
+  { subject: "explosiveness", definition: EXPLOSIVENESS_V1, label: "Explosiveness" },
+  { subject: "ball_security", definition: BALL_SECURITY_V1, label: "Ball Security" },
+];
+
+export const RATEABLE_METRICS: Record<string, { label: string; default_direction: Direction; subjects: RatingSubject[] }> = {
+  conversion_rate: { label: "Conversion rate", default_direction: "higher_is_better", subjects: ["third_down"] },
+  epa_per_play: { label: "EPA / play", default_direction: "higher_is_better", subjects: ["third_down", "offense", "defense", "explosiveness", "ball_security"] },
+  success_rate: { label: "Success rate", default_direction: "higher_is_better", subjects: ["third_down", "offense", "defense"] },
+  yards_per_play: { label: "Yards / play", default_direction: "higher_is_better", subjects: ["third_down", "offense", "defense"] },
+  explosive_rate: { label: "Explosive rate", default_direction: "higher_is_better", subjects: ["third_down", "offense", "defense", "explosiveness"] },
+  turnover_rate: { label: "Turnover rate", default_direction: "lower_is_better", subjects: ["third_down", "offense", "defense", "ball_security"] },
+  touchdown_rate: { label: "Touchdown rate", default_direction: "higher_is_better", subjects: ["third_down", "offense", "defense"] },
+  pass_rate: { label: "Pass rate", default_direction: "higher_is_better", subjects: ["third_down", "offense", "defense"] },
+  third_down_conversion_rate: { label: "Third-down conversion", default_direction: "higher_is_better", subjects: ["offense", "defense"] },
+  third_down_epa_per_play: { label: "Third-down EPA / play", default_direction: "higher_is_better", subjects: ["offense", "defense"] },
+  red_zone_touchdown_rate: { label: "Red-zone TD rate", default_direction: "higher_is_better", subjects: ["offense", "defense", "red_zone"] },
+  red_zone_epa_per_play: { label: "Red-zone EPA / play", default_direction: "higher_is_better", subjects: ["offense", "defense", "red_zone"] },
+  red_zone_success_rate: { label: "Red-zone success", default_direction: "higher_is_better", subjects: ["offense", "defense", "red_zone"] },
+  points_per_game: { label: "Points per game", default_direction: "higher_is_better", subjects: ["offense", "defense"] },
 };
 
 export interface DefinitionValidation {
@@ -122,8 +235,8 @@ export function validateDefinition(input: unknown, now = new Date().toISOString(
   const name = typeof o.name === "string" && o.name.trim() ? o.name.trim().slice(0, 80) : null;
   if (!name) errors.push("name: required");
   const version = typeof o.version === "string" && /^\d+\.\d+\.\d+$/.test(o.version) ? o.version : "1.0.0";
-  const subject = o.subject ?? "third_down";
-  if (subject !== "third_down") errors.push("subject: only third_down is rateable today");
+  const subject = (o.subject ?? "third_down") as RatingSubject;
+  if (!RATING_SUBJECTS.includes(subject)) errors.push(`subject: one of ${RATING_SUBJECTS.join("|")}`);
   const comps = Array.isArray(o.components) ? o.components : null;
   if (!comps || comps.length === 0) errors.push("components: non-empty array required");
   const components: RatingComponent[] = [];
@@ -134,6 +247,7 @@ export function validateDefinition(input: unknown, now = new Date().toISOString(
     const cc = c as Record<string, unknown>;
     const metric = typeof cc.metric === "string" ? cc.metric : "";
     if (!(metric in RATEABLE_METRICS)) { errors.push(`component.metric: unknown ${JSON.stringify(metric)}; allowed ${Object.keys(RATEABLE_METRICS).join(", ")}`); continue; }
+    if (RATING_SUBJECTS.includes(subject) && !RATEABLE_METRICS[metric].subjects.includes(subject)) { errors.push(`component.metric: ${metric} is not available on subject ${subject}`); continue; }
     if (seen.has(metric)) { errors.push(`component.metric: duplicate ${metric}`); continue; }
     seen.add(metric);
     const weight = typeof cc.weight === "number" && Number.isFinite(cc.weight) && cc.weight > 0 ? cc.weight : NaN;
@@ -148,12 +262,13 @@ export function validateDefinition(input: unknown, now = new Date().toISOString(
   if (errors.length) return { ok: false, errors };
   for (const c of components) c.weight = c.weight / total;
   const slug = name!.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-  const min_sample = typeof o.min_sample === "number" && Number.isInteger(o.min_sample) && o.min_sample >= 0 ? o.min_sample : 25;
+  const defaultMin = subject === "third_down" ? 25 : subject === "red_zone" ? 40 : 300;
+  const min_sample = typeof o.min_sample === "number" && Number.isInteger(o.min_sample) && o.min_sample >= 0 ? o.min_sample : defaultMin;
   const def: RatingDefinition = {
     id: typeof o.id === "string" && /^[a-z0-9_@.\-]+$/.test(o.id) ? o.id : `custom_${slug}@${version}`,
     name: name!,
     version,
-    subject: "third_down",
+    subject,
     components,
     normalization: "percentile_rank",
     normalization_version: PERCENTILE_RANK_VERSION,

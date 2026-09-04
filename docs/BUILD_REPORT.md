@@ -4,6 +4,38 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.3.0 · the rating card, power rankings, scout card, watch loop
+
+### SHIPPED
+
+- **Six rating subjects** over a per-team **TeamProfile** surface computed from the play table (all-snaps bundle + third-down + red-zone + points per game): Offense v1 (EPA 30 · success 20 · explosive 15 · third-down 15 · red-zone TD 10 · turnovers 10), Defense v1 (mirror, directions flipped), Third Down v1, Red Zone v1 (TD rate 50 · EPA 30 · success 20), Explosiveness, Ball Security. Custom definitions accept a `subject`; metrics are validated against the subject's surface.
+- **Power rankings** `GET /rankings` — every team under a definition, with movement vs the as-known-then snapshot one week earlier, risers/fallers. `chalk rankings`.
+- **Home rating card** — six tiles, each tappable into "why" (routes to the `rating` intent with a `subject`), plus a **scout card** for the next opponent (pass %, EPA, shotgun %, top personnel, 3rd & 4–6 pass rate, weakest/strongest, one-tap full report / their defense).
+- **`chalk watch --season N`** — the only polling loop: idempotent re-ingest + pulse tick on a cadence. Server watches ingest/pulse event counts and drops all in-process caches when they change (logged).
+- Rating intent takes `subject`; rule planner routes "red zone rating", "grade the defense", "ball security badge", etc.
+- Tests: **50** (4 new: profiles mirror offense/defense, all subjects compute, definitions/subject validation, planner routing).
+
+### VERIFIED ON THE REAL SYSTEM (2025, 32 teams)
+
+- TB card: Offense 48 (#19), Defense 45 (#19), Third Down 66 (#11), Red Zone 40 (#20), Explosiveness 67 (#11), Ball Security 73 (#9). Offense rankings: GB 89, BUF 88, LA 87, NE 77, CHI 74 … NYJ 14, CLE 7, LV 6; risers DAL +2.
+- Scout card for TB's opener: CIN offense 1,049 snaps, 64.5% pass, shotgun 79.8%, 11 personnel 65.1%, **95% pass on 3rd & 4–6** (60 snaps), weakest goal-to-go.
+- Live ask "What is Tampa's red zone rating and why?" → model plan `rating` subject `red_zone` → 40/100 #20 (149 red-zone snaps), weakest component success rate 38.9% vs league median 42.2% → GLM narration, **18/18 numbers verified in evidence**.
+- Home warm-up now 11.6s cold (six ratings + scout), ~300ms warm.
+
+### DISCOVERED
+
+1. Rounded component scores can sum to 101 across two mirrored ratings; the exact scores sum to 100. Tests compare `score_exact`.
+2. "42th percentile" — my deterministic statement, not the model's; fixed with a proper ordinal. The model echoes evidence text verbatim, which is exactly what we want, so the evidence text has to be right.
+
+### NEXT
+
+1. Live deviation card when `football_game_state.phase === "live"` (kickoff Sept 10; `chalk watch --season 2026`).
+2. Rating trend for every subject (the trend engine is third-down only today).
+3. Sports-Rater fan layer: `nick#hash` identity, fan ratings/likes `caused_by` engine snapshots, hash-chain feed (`sr_*`).
+4. Player layer (rosters/snap counts) — only when Dad/Sarah ask.
+
+---
+
 ## 2026-09-03/04 — v0.2.0 · CHALK Home (V3 layer over the v0.1.0 core)
 
 ### SHIPPED
