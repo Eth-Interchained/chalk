@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.9.2 · League and Rate differently posted into a hidden view
+
+- **Mark:** "When I click 'League' label or even if I click 'Rate differently' nothing happens."
+- **Root cause (mine):** every interactive card is prepended into `#feed`, which since the Dashboard | Feed split lives inside `#feedview` — `display: none` while the Dashboard shows. `ask()` and `openRecorded()` switched views first; **League, Rate differently, the Rate-it tile and the handle card did not**, so from the Dashboard their cards landed in an invisible container and `scrollIntoView` on a hidden node did nothing. Four dead buttons, one cause.
+- **Fix:** one `showCard(card)` helper — switch to the Feed view (silent, URL synced), prepend, scroll — used by all six call sites. The boot-time "CHALK API unreachable" error now prepends into `<main>` (it must be visible whatever view is active). Coach mode still hides Rate differently by design (fan-layer control).
+- Tests: static guard — no `$("#feed").prepend(` outside `showCard`; the four functions render via `showCard`. 89/89 both stores.
+
 ## 2026-09-04 — v0.9.1 · the data stamp counted runs, not data
 
 - **Mark:** "it keeps flashing: Computing from the full season's plays — first look at this team since the data changed (~30s)… but theres no new data, the next game is like Sept. 14."
