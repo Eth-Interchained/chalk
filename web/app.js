@@ -122,7 +122,7 @@ function renderProvenance(p, coll, id) {
   box.append(prov);
   if (p.node_count > 60) box.append(el(`<div class="muted">… ${p.node_count - 60} more</div>`));
   const ev = (p.records || []).find((r) => Array.isArray(r.data?.evidence_ids))?.data;
-  if (ev) box.append(el(`<div class="muted" style="margin-top:6px">${ev.evidence_ids.length} of ${ev.evidence_count ?? ev.evidence_ids.length} evidence plays behind this answer — open Show evidence on a live card to page through them.</div>`));
+  if (ev) box.append(el(`<div class="muted" style="margin-top:6px">${ev.evidence_ids.length} of ${ev.evidence_count ?? ev.evidence_ids.length} evidence plays behind this answer — Show evidence lists them; page through them.</div>`));
   box.append(el(`<div class="muted" style="margin-top:6px"><a href="/api/v1/provenance/${esc(coll)}/${encodeURIComponent(id)}" target="_blank" rel="noopener noreferrer">raw provenance JSON ↗</a></div>`));
   return box;
 }
@@ -165,7 +165,21 @@ function recordedCard(it) {
   for (const st of it.statements) statements.append(el(`<div class="statement">${esc(st)}</div>`));
   prose.textContent = it.answer ?? "";
   $(".coach", card).innerHTML = `<div class="muted">Coach view needs the live evidence package — use Re-ask live.</div>`;
-  $(".act-evidence", card).remove(); $(".act-plan", card).remove();
+  $(".act-plan", card).remove();
+  // Show evidence on a recorded card (v0.12.15): the stored observation carries evidence_ids (≤500) and
+  // calculation_ids — the same drawer as a live card, loaded on demand. Every failure names itself.
+  const evBtn = $(".act-evidence", card);
+  evBtn.onclick = async () => {
+    evBtn.disabled = true; drawer.innerHTML = `<div class="muted">loading the stored observation…</div>`;
+    try {
+      const o = await api(`/api/v1/observations/${encodeURIComponent(it.id)}`);
+      const obs = o.observation ?? o.data ?? o;
+      const evidence = { evidence_ids: obs.evidence_ids ?? [], evidence_count: obs.evidence_count ?? (obs.evidence_ids ?? []).length, calculation_ids: obs.calculation_ids ?? [], summary: obs.summary ?? null, kind: obs.kind ?? null };
+      if (!evidence.evidence_ids.length && !evidence.calculation_ids.length) { drawer.innerHTML = `<div class="muted">This observation stored no evidence ids (keys: ${esc(Object.keys(obs).join(", "))}) — Re-ask live for the full package.</div>`; return; }
+      await renderEvidenceDrawer(drawer, evidence);
+    } catch (e) { drawer.innerHTML = `<div class="err">could not load the observation: ${esc(e.message)}</div>`; }
+    finally { evBtn.disabled = false; }
+  };
   const re = el(`<button class="chip">Re-ask live</button>`); re.onclick = () => ask(it.question, { live: true }); $(".card-foot", card).prepend(re);
   $(".act-coach", card).onclick = () => card.classList.toggle("coach-on");
   card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => { try { const r = await fanPost("/api/v1/fans/reactions", { target_coll: "football_observations", target_id: it.id, reaction: b.dataset.kind }); if (r) { b.classList.add("on"); b.textContent = `${b.dataset.kind === "agree" ? "👍" : "👎"} ${r.replaced ? "changed" : "saved"} · #${r.chain_index}`; loadRecord(); } } catch (e) { b.textContent = e.message; } }; });
@@ -793,6 +807,19 @@ async function loadFeed() {
   } catch (e) { body.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
 }
 
+// Evidence drawer — shared by live cards (evidence package from the ask stream) and recorded cards (the stored
+// observation's evidence_ids / calculation_ids, v0.12.15). Same play list, same provenance, either way.
+async function renderEvidenceDrawer(drawer, evidence) {
+    if (!evidence.evidence_ids?.length) { const n = evidence.summary?.rating?.sample_size ?? evidence.summary?.profile?.snaps; drawer.innerHTML = `<div class="muted">This is an aggregate over ${n ?? "the season's"} snaps — no single play list. The component table is in Coach view; Provenance shows the stored rating and its lineage.</div>`; return; }
+    const total = Math.min(evidence.evidence_ids.length, 300);
+    drawer.innerHTML = `<div class="h">Evidence · <span id="ev-count">0</span> of ${evidence.evidence_count} plays${evidence.calculation_ids.length ? ` · calc ${esc(evidence.calculation_ids.join(", "))}` : ""}</div><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="0"><i style="width:0%"></i></div><div class="muted" id="ev-status">fetching plays by game…</div>`;
+    const bar = $(".progress i", drawer), status = $("#ev-status", drawer), count = $("#ev-count", drawer);
+    try {
+      const plays = await loadPlays(evidence.evidence_ids, (pr) => { bar.style.width = `${Math.round((pr.plays_loaded / Math.max(1, total)) * 100)}%`; bar.parentElement.setAttribute("aria-valuenow", pr.plays_loaded); count.textContent = pr.plays_loaded; status.textContent = `game ${pr.games_done} of ${pr.games_total} · ${pr.plays_loaded} plays`; });
+      count.textContent = plays.length; status.remove(); bar.parentElement.remove();
+      for (const p of plays) drawer.append(playRow(p));
+    } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
 // ------------------------------------------------------------------- ask
 async function ask(question, opts = {}) {
   const card = $("#tpl-answer").content.firstElementChild.cloneNode(true);
@@ -841,15 +868,7 @@ async function ask(question, opts = {}) {
   }
   $(".act-evidence", card).onclick = async () => {
     if (!evidence) return;
-    if (!evidence.evidence_ids?.length) { const n = evidence.summary?.rating?.sample_size ?? evidence.summary?.profile?.snaps; drawer.innerHTML = `<div class="muted">This is an aggregate over ${n ?? "the season's"} snaps — no single play list. The component table is in Coach view; Provenance shows the stored rating and its lineage.</div>`; return; }
-    const total = Math.min(evidence.evidence_ids.length, 300);
-    drawer.innerHTML = `<div class="h">Evidence · <span id="ev-count">0</span> of ${evidence.evidence_count} plays${evidence.calculation_ids.length ? ` · calc ${esc(evidence.calculation_ids.join(", "))}` : ""}</div><div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="0"><i style="width:0%"></i></div><div class="muted" id="ev-status">fetching plays by game…</div>`;
-    const bar = $(".progress i", drawer), status = $("#ev-status", drawer), count = $("#ev-count", drawer);
-    try {
-      const plays = await loadPlays(evidence.evidence_ids, (pr) => { bar.style.width = `${Math.round((pr.plays_loaded / Math.max(1, total)) * 100)}%`; bar.parentElement.setAttribute("aria-valuenow", pr.plays_loaded); count.textContent = pr.plays_loaded; status.textContent = `game ${pr.games_done} of ${pr.games_total} · ${pr.plays_loaded} plays`; });
-      count.textContent = plays.length; status.remove(); bar.parentElement.remove();
-      for (const p of plays) drawer.append(playRow(p));
-    } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+    await renderEvidenceDrawer(drawer, evidence);
   };
   $(".act-coach", card).onclick = () => card.classList.toggle("coach-on");
   card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => {

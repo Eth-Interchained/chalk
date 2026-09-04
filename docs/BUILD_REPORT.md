@@ -5,6 +5,12 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.15 · Show evidence on recorded cards
+
+- **Mark:** "hmm what happened to 'Evidence' … is that coach mode only." Not mode-gated — live answer cards had Show evidence in both modes; **recorded** cards in the Feed / Record (v0.7.x) never got the button, and the provenance note told fans to "open Show evidence on a live card". Now that the Feed is the primary surface, that gap was the whole experience.
+- Fix: the evidence drawer is one shared renderer (`renderEvidenceDrawer`) for live cards (evidence package from the ask stream) and recorded cards (the stored observation's `evidence_ids` ≤500 + `calculation_ids`, loaded on demand from `GET /api/v1/observations/:id`). Same play list, same provenance. Failure paths name themselves (observation unreachable; observation stored no ids → "Re-ask live").
+- Tests: static guard. 115/115 both stores. Live on the local store: see PR.
+
 ## 2026-09-04 — v0.12.14 · AGENTS.md and LORE.md — telling the Oracle what we did
 
 - **Mark:** "We didnt even tell the Oracle what we did write AGENTS.md and LORE.md on the next cut."
