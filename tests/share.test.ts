@@ -48,7 +48,12 @@ test("injectOg: OG + Twitter tags before </head>, title replaced, attributes esc
 test("publicBase: env wins, then forwarded host/proto, then fallback", () => {
   assert.equal(publicBase({ CHALK_PUBLIC_URL: "https://sports-rater.com/" }, {}), "https://sports-rater.com");
   assert.equal(publicBase({}, { "x-forwarded-host": "sports-rater.com", "x-forwarded-proto": "https" }), "https://sports-rater.com");
-  assert.equal(publicBase({}, { host: "127.0.0.1:4040" }), "https://127.0.0.1:4040");
+  // loopback / private upstream hosts forwarded by a proxy are not the public name (v0.12.12: caption said https://127.0.0.1:4040/s/TB)
+  assert.equal(publicBase({}, { host: "127.0.0.1:4040" }), "https://sports-rater.com");
+  assert.equal(publicBase({}, { host: "localhost:4040", "x-forwarded-proto": "http" }), "https://sports-rater.com");
+  assert.equal(publicBase({}, { "x-forwarded-host": "192.168.1.9" }), "https://sports-rater.com");
+  assert.equal(publicBase({}, { host: "sports-rater.com" }), "https://sports-rater.com");
+  assert.equal(publicBase({ CHALK_PUBLIC_URL: "https://sports-rater.com" }, { host: "127.0.0.1:4040" }), "https://sports-rater.com");
   assert.equal(publicBase({}, {}), "https://sports-rater.com");
 });
 

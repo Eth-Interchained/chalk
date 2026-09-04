@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.12 · the blank card and the 127.0.0.1 caption
+
+- **Mark:** "nah we broke it further" — screenshot: empty ring, "no 2025 third down rating yet", no pills, no tiles; caption ending in `https://127.0.0.1:4040/s/TB?season=2025`.
+- **Blank card (root cause, mine, v0.12.11):** the card now draws immediately from `state.home` — and right after a deploy the Home request sits behind the rebuild on the single worker for up to ~30 s. Hit Share in that window and `state.home` is not there yet; the card drew from nothing. Before v0.12.11 the 30 s caption wait hid the race by accident. **Fix:** `loadHome` exposes its in-flight promise; Share awaits it (status line: "waiting for the dashboard data — the card is drawn from it…") and refuses to draw a blank card if there is still no payload for this team/season.
+- **127.0.0.1 (root cause, mine, v0.12.0):** `publicBase` trusted the `Host` header; nginx forwards its upstream `127.0.0.1:4040`. **Fix, both sides:** the server ignores loopback/private hosts and falls back to `https://sports-rater.com` (`CHALK_PUBLIC_URL` still pins it explicitly — set it on the VPS); the client re-homes any server URL whose host is not the page's own, in the caption and the image link.
+- Tests: `publicBase` loopback/private cases; static guard for wait-before-draw and re-homing. 111/111 both stores. Not browser-verified.
+
 ## 2026-09-04 — v0.12.11 · the sharecard draws first
 
 - **Mark:** "its too slow now … it loads in like a minute."
