@@ -189,3 +189,14 @@ test("home grid (v0.12.3): Last game + What's hurting them stack in one column; 
   assert.match(css, /\.tile\.next \{ grid-column: span 2; \}/);
   assert.match(css, /\.tile-stack \{ display: grid;/);
 });
+
+test("home refresh is quiet (v0.12.5): a stale-flagged serve refetches without wiping tiles; the slow message names both causes it cannot distinguish", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  assert.ok(js.includes("loadHome(defId, { quiet: true })"), "refresh retries are quiet");
+  assert.ok(!js.includes("first look at this team since the data changed"), "no asserted cause the client has not observed");
+  assert.ok(js.includes("the engine is busy, or this is the first look at"), "slow message names both possible causes");
+  assert.ok(js.includes("if (quiet) { console.warn(`home quiet refetch failed"), "a failed quiet refetch never blanks a good page");
+  const fn = js.slice(js.indexOf("async function loadHome("));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.ok(body.indexOf("if (!quiet) {") < body.indexOf('["#h-badges"'), "tile wipe is inside the non-quiet branch");
+});

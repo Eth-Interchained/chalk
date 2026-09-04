@@ -314,29 +314,42 @@ function renderSiteFoot() {
   f.innerHTML = `<div>${esc(state.meta?.team_logos?.disclaimer ?? "")}</div>${src.length ? `<div>Data: ${esc(src.join(" · "))}. The database knows. Deterministic code calculates. The model interprets. Provenance proves.</div>` : ""}<div class="legal">© ${new Date().getUTCFullYear()} <b>Interchained LLC</b> · CHALK / Sports-Rater · Business Source License 1.1 (SPDX: BUSL-1.1) · Licensor: Interchained LLC</div>`;
 }
 let homeRefreshAttempts = 0;
-async function loadHome(defId) {
-  applyTeamTheme(state.team);
-  setHero(state.team);
-  coachDeckKey = "";
-  $("#home").classList.add("loading");
-  $("#ring").classList.add("loading");
-  $("#h-abbr").textContent = state.team;
-  const heroLogo = $("#h-logo"); heroLogo.innerHTML = logoImg(state.team, "hero-logo"); $("#hero").classList.toggle("has-logo", Boolean(heroLogo.firstChild));
-  $("#h-name").textContent = TEAMS[state.team]?.[0] ?? "";
-  $("#rc-score").textContent = "…";
-  ["#h-badges", "#form-body", "#last-body", "#next-body", "#weak-body", "#rc-components", "#trend-headline", "#ratings", "#scout-body"].forEach((s) => { $(s).innerHTML = ""; });
-  $("#trend-svg").innerHTML = "";
-  // If the server has no persisted snapshot for this team/season it computes
-  // inline (~30s from 48k plays). Say so instead of showing three dots.
-  const slow = setTimeout(() => { for (const sel of ["#scout-body", "#trend-headline", "#weak-body"]) $(sel).innerHTML = `<div class="muted">Computing from the full season's plays — first look at this team since the data changed (~30s). Next time is instant.</div>`; }, 1500);
+// quiet: a background refetch after a stale-flagged serve — never wipe tiles the fan is already reading,
+// never re-arm the slow message; just swap the payload in when it lands (v0.12.5). The v0.9.x retry loop
+// called this without `quiet`, so a page that HAD data blanked and re-announced "computing" every 4 s
+// for the whole ~30 s of a one-time post-deploy rebuild.
+async function loadHome(defId, opts = {}) {
+  const quiet = Boolean(opts.quiet);
+  let slow = null;
+  if (!quiet) {
+    applyTeamTheme(state.team);
+    setHero(state.team);
+    coachDeckKey = "";
+    $("#home").classList.add("loading");
+    $("#ring").classList.add("loading");
+    $("#h-abbr").textContent = state.team;
+    const heroLogo = $("#h-logo"); heroLogo.innerHTML = logoImg(state.team, "hero-logo"); $("#hero").classList.toggle("has-logo", Boolean(heroLogo.firstChild));
+    $("#h-name").textContent = TEAMS[state.team]?.[0] ?? "";
+    $("#rc-score").textContent = "…";
+    ["#h-badges", "#form-body", "#last-body", "#next-body", "#weak-body", "#rc-components", "#trend-headline", "#ratings", "#scout-body"].forEach((s) => { $(s).innerHTML = ""; });
+    $("#trend-svg").innerHTML = "";
+    // Slow means one of two things we cannot tell apart from here: the engine is busy (a rebuild or a
+    // heavy scan ahead of us on the single worker) or this team has no snapshot yet and is being built
+    // inline (~30 s from the full season). Say exactly that — not a cause we have not observed.
+    slow = setTimeout(() => { for (const sel of ["#scout-body", "#trend-headline", "#weak-body"]) $(sel).innerHTML = `<div class="muted">Still loading — the engine is busy, or this is the first look at ${esc(state.team)} ${esc(String(state.season))} on this version (built from the full season, ~30s; instant after that).</div>`; }, 1500);
+  }
   try {
     const h = await api(`/api/v1/teams/${state.team}/home?season=${state.season}${defId ? `&definition=${encodeURIComponent(defId)}` : ""}`);
-    clearTimeout(slow);
+    if (slow) clearTimeout(slow);
+    if (quiet && (state.team !== h.team || state.season !== h.season)) return; // fan moved on; drop it
     state.home = h; state.rating = h.rating ? { summary: h.rating, snapshot: { definition_id: h.rating.definition_id, id: h.rating_snapshot_id } } : null;
     $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
     // Served from a snapshot built before the latest data change: show it, then re-pull once the background rebuild lands.
-    if (h.served?.refreshing) { $("#rc-rank").insertAdjacentHTML("beforeend", ' <span class="badge amber" id="refreshing" title="data changed since this was computed; refreshing">refreshing…</span>'); homeRefreshAttempts = (homeRefreshAttempts ?? 0) + 1; if (homeRefreshAttempts <= 8) setTimeout(() => { if (state.team === h.team && state.season === h.season) loadHome(defId); }, 4000); } else homeRefreshAttempts = 0;
+    // Stale-flagged serve: the server is rebuilding in the background (data or code version moved). Show the
+    // snapshot, mark it, and refetch QUIETLY until the fresh one lands — up to ~60 s, never wiping the page.
+    if (h.served?.refreshing) { homeRefreshAttempts = (homeRefreshAttempts ?? 0) + 1; if (homeRefreshAttempts <= 15) setTimeout(() => { if (state.team === h.team && state.season === h.season) loadHome(defId, { quiet: true }); }, 4000); else console.warn(`home ${h.team} ${h.season}: still refreshing after ${homeRefreshAttempts} quiet retries (snapshot ${h.served.snapshot_stamp} vs data ${h.served.data_stamp}) — giving up until the next navigation`); } else homeRefreshAttempts = 0;
     renderHeadline(h);
+    if (h.served?.refreshing) $("#rc-rank").insertAdjacentHTML("beforeend", ` <span class="badge amber" id="refreshing" title="snapshot ${esc(h.served.snapshot_stamp ?? "?")} · now ${esc(h.served.data_stamp ?? "?")} — rebuilding in the background, this page stays up">refreshing…</span>`);
     renderFav();
     renderTrend(h.trend);
     renderForm(h.form);
@@ -350,7 +363,8 @@ async function loadHome(defId) {
     loadGames();
     loadRecord();
     if (state.coach) loadCoachDeck();
-  } catch (e) { clearTimeout(slow); $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
+  } catch (e) { if (slow) clearTimeout(slow); $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
+    if (quiet) { console.warn(`home quiet refetch failed (${e.message}) — keeping the page as is`); return; }
     $("#rc-score").textContent = "–";
     $("#rc-line1").innerHTML = `<span class="err">${esc(e.message)}</span>`;
     $("#rc-rank").textContent = e.status === 404 ? `No ${state.season} data — run: chalk ingest --season ${state.season}` : "";
