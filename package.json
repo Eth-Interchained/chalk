@@ -3,7 +3,7 @@
   "version": "0.8.5",
   "description": "CHALK — local-first football intelligence engine behind sports-rater.com. The database knows. Deterministic code calculates. The model interprets. Provenance proves.",
   "type": "module",
-  "license": "GPL-3.0-only",
+  "license": "BUSL-1.1",
   "engines": { "node": ">=24" },
   "bin": { "chalk": "./bin/chalk.ts" },
   "scripts": {
