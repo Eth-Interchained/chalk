@@ -65,7 +65,7 @@ async function boot() {
   ts.onchange = () => { state.team = ts.value; syncUrl(); loadHome(); renderSuggest(); loadFeed(); loadHistory(true); };
   ss.onchange = () => { state.season = Number(ss.value); syncUrl(); loadHome();  loadHistory(true); };
   const mode = $("#mode");
-  const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); };
+  const applyMode = () => { mode.textContent = state.coach ? "Coach" : "Fan"; mode.setAttribute("aria-pressed", String(state.coach)); document.body.classList.toggle("mode-coach", state.coach); document.querySelectorAll(".card.answer").forEach((c) => c.classList.toggle("coach-on", state.coach)); };
   mode.onclick = () => { state.coach = !state.coach; syncUrl(); applyMode(); };
   applyMode(); renderSuggest(); loadHome(); renderWho(); loadFeed(); loadHistory(true);
   $("#take").onsubmit = async (e) => { e.preventDefault(); const text = $("#take-text").value.trim(); if (!text) return; try { const r = await fanPost("/api/v1/fans/posts", { text, team: state.team }); if (r) { $("#take-text").value = ""; loadFeed(); } } catch (err) { alert(err.message + (err.detail ? ` — ${err.detail.join("; ")}` : "")); } };
@@ -128,31 +128,31 @@ function recordedCard(it) {
 
 // ---- History: the feed IS the record. Every completion for this team/season,
 // newest first, paginated by seq with infinite scroll. Live asks prepend.
-const history = { before: null, loading: false, done: false, token: 0 };
+const hist = { before: null, loading: false, done: false, token: 0 };
 function skeletonCard() {
   return el(`<article class="card skel" aria-hidden="true"><header class="card-head"><div class="skeleton" style="width:60%;height:22px;margin:0"></div><div class="skeleton" style="width:90px;height:18px;margin:0"></div></header><div class="statements"><div class="skeleton" style="width:80%"></div><div class="skeleton" style="width:65%"></div></div><div class="skeleton" style="width:95%"></div><div class="skeleton" style="width:88%"></div><div class="skeleton" style="width:40%"></div></article>`);
 }
 async function loadHistory(reset = false) {
   const feed = $("#feed");
-  if (reset) { history.before = null; history.done = false; history.loading = false; history.token++; feed.innerHTML = ""; $("#history-sentinel")?.remove(); }
-  if (history.loading || history.done) return;
-  history.loading = true;
-  const token = history.token;
+  if (reset) { hist.before = null; hist.done = false; hist.loading = false; hist.token++; feed.innerHTML = ""; $("#history-sentinel")?.remove(); }
+  if (hist.loading || hist.done) return;
+  hist.loading = true;
+  const token = hist.token;
   const skels = [skeletonCard(), skeletonCard(), skeletonCard()];
   feed.append(...skels);
   try {
-    const r = await api(`/api/v1/record?team=${state.team}&season=${state.season}&limit=10${history.before ? `&before=${history.before}` : ""}`);
-    if (token !== history.token) return; // team/season changed mid-flight
+    const r = await api(`/api/v1/record?team=${state.team}&season=${state.season}&limit=10${hist.before ? `&before=${hist.before}` : ""}`);
+    if (token !== hist.token) return; // team/season changed mid-flight
     skels.forEach((k) => k.remove());
     for (const it of r.items) { const c = recordedCard(it); c.classList.add("recorded"); if (!$(`#feed [data-obs="${CSS.escape(it.id)}"]`)) feed.append(c); }
-    history.before = r.next_before;
-    history.done = r.next_before === null;
+    hist.before = r.next_before;
+    hist.done = r.next_before === null;
     if (!feed.children.length) feed.append(el(`<div class="card muted" id="history-empty">Nothing asked about ${esc(teamName(state.team))} ${state.season} yet — every answer you get here is kept, with its evidence, and shows up for the next fan.</div>`));
-    if (!history.done) { const sn = el(`<div id="history-sentinel" class="muted" style="text-align:center;padding:10px">${r.total - $$("#feed .recorded").length} older answers · scroll for more</div>`); feed.append(sn); historyObserver.observe(sn); }
+    if (!hist.done) { const sn = el(`<div id="history-sentinel" class="muted" style="text-align:center;padding:10px">${r.total - $$("#feed .recorded").length} older answers · scroll for more</div>`); feed.append(sn); historyObserver.observe(sn); }
   } catch (e) {
     skels.forEach((k) => k.remove());
     feed.append(el(`<div class="card"><div class="err">history unavailable: ${esc(e.message)}</div></div>`));
-  } finally { history.loading = false; }
+  } finally { hist.loading = false; }
 }
 const historyObserver = new IntersectionObserver((entries) => { for (const en of entries) if (en.isIntersecting) { en.target.remove(); loadHistory(); } }, { rootMargin: "600px" });
 function renderSiteFoot() {
@@ -605,4 +605,9 @@ async function showLeague() {
   card.scrollIntoView({ behavior: "smooth" });
 }
 
-boot();
+// A failure during boot must be visible on the page — a dark shell with nothing on it is indistinguishable from a network outage.
+boot().catch((e) => {
+  console.error("boot failed", e);
+  const main = document.querySelector("main") ?? document.body;
+  main.prepend(el(`<div class="card"><div class="err">Sports-Rater failed to start: ${esc(e && e.message ? e.message : String(e))}. Reload; if it persists, the server log has the rest.</div></div>`));
+});
