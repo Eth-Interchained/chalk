@@ -16,6 +16,7 @@
 import path from "node:path";
 import { ChalkStore, type Store, DEFAULT_NEDB_URL, DEFAULT_DB, ensureNedbd } from "../src/store/nedb.ts";
 import { EmbeddedStore } from "../src/store/embedded.ts";
+import { WorkerStore } from "../src/store/worker_store.ts";
 import { NFLDataSource } from "../src/source/nfldata.ts";
 import { resolveWatchDeep } from "../src/ingest/watch_config.ts";
 import { ingest } from "../src/ingest/ingest.ts";
@@ -61,10 +62,26 @@ const num = (k: string, dflt?: number) => (typeof flags[k] === "string" ? Number
  *   CHALK_STORE=http, or NEDB_URL   talk to a nedbd daemon (autostarts the bundled binary on loopback
  *   set                             when nothing answers, unless CHALK_AUTOSTART_NEDB=0).
  */
-async function boot(): Promise<{ store: Store; stop: () => void; mode: "embedded" | "http" }> {
+async function boot(opts: { worker?: boolean } = {}): Promise<{ store: Store; stop: () => void | Promise<void>; mode: "embedded" | "http" }> {
   const mode = (process.env.CHALK_STORE ?? (process.env.NEDB_URL ? "http" : "embedded")) as "embedded" | "http";
   const dataDir = path.resolve(process.env.CHALK_DATA ?? "./chalk-data");
   if (mode === "embedded") {
+    // `serve` puts the engine on a worker thread: napi calls are synchronous and a
+    // cold Home build (~25 s of scans) must never freeze the HTTP thread. One-shot
+    // CLI commands have no HTTP to protect and stay in-thread (CHALK_EMBEDDED_WORKER=0 forces that for serve too).
+    const useWorker = opts.worker === true && process.env.CHALK_EMBEDDED_WORKER !== "0";
+    if (useWorker) {
+      try {
+        const ws = await WorkerStore.open(dataDir, process.env.NEDB_DB ?? DEFAULT_DB, log);
+        log(`store: embedded NEDB at ${dataDir} (engine on a worker thread)`);
+        return { store: ws, mode, stop: () => ws.close() };
+      } catch (e) {
+        throw new Error(
+          `could not open the embedded NEDB at ${dataDir} (worker): ${(e as Error).message}\n` +
+            `  If \`chalk serve\` (or a nedbd) already holds this directory, stop it first — one engine per data dir.`,
+        );
+      }
+    }
     let store: EmbeddedStore;
     try {
       store = EmbeddedStore.open(dataDir, process.env.NEDB_DB ?? DEFAULT_DB);
@@ -315,7 +332,7 @@ async function main() {
       return;
     }
     case "serve": {
-      const { store, stop, mode } = await boot();
+      const { store, stop, mode } = await boot({ worker: true });
       const server = await startServer({
         store,
         host: str("host", process.env.HOST ?? "127.0.0.1")!,
@@ -335,11 +352,11 @@ async function main() {
       } else {
         log(`watch: off (set CHALK_WATCH_SEASON or --watch-season to re-ingest + pulse on a cadence)`);
       }
-      const shutdown = () => {
+      const shutdown = async () => {
         log("shutting down");
         watchCtl.abort();
         server.close();
-        stop();
+        try { await stop(); } catch (e) { log(`store close failed: ${(e as Error).message}`); }
         process.exit(0);
       };
       process.on("SIGINT", shutdown);

@@ -10,6 +10,8 @@ import { auditSeason } from "../ingest/audit.ts";
 import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapshot, type HomePayload } from "./home.ts";
 import type { RatingDefinition } from "../rating/definitions.ts";
 import { logoConfig } from "./logos.ts";
+import { createRequire } from "node:module";
+const CHALK_VERSION: string = (createRequire(import.meta.url)("../../package.json") as { version: string }).version;
 import { evidenceKey, findObservation, listRecord } from "../llm/record.ts";
 import { adminOverview, adminAuthorized, validateTelemetry, telemetryDoc, TELEMETRY } from "./admin.ts";
 import { setHidden, listModeration, hiddenSet, validateModeration } from "./moderation.ts";
@@ -132,6 +134,18 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
   }
   let teamsCache: { at: number; teams: string[]; seasons: number[] } | null = null;
 
+  let healthCache: { at: number; value: Record<string, unknown> } | null = null;
+  let healthRefreshing: Promise<void> | null = null;
+  async function refreshHealth(): Promise<void> {
+    const [health, seq, head] = await Promise.all([store.health().catch((e) => ({ ok: false, error: (e as Error).message })), store.seq().catch(() => null), store.head().catch(() => null)]);
+    healthCache = { at: Date.now(), value: { ...health, seq, head } };
+  }
+  async function healthSnapshot(): Promise<Record<string, unknown>> {
+    if (!healthCache) await refreshHealth();
+    else if (Date.now() - healthCache.at > 5_000 && !healthRefreshing) healthRefreshing = refreshHealth().catch((e) => log(`health refresh failed: ${(e as Error).message}`)).finally(() => { healthRefreshing = null; });
+    return { ...healthCache!.value, age_ms: Date.now() - healthCache!.at };
+  }
+
   async function meta(): Promise<{ teams: string[]; seasons: number[] }> {
     if (teamsCache && Date.now() - teamsCache.at < 60_000) return teamsCache;
     const rows = await store.query<Game>(`FROM ${COLL.games}`);
@@ -182,8 +196,10 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     const m = req.method ?? "GET";
 
     if (p === "/api/v1/health" && m === "GET") {
-      const [health, seq, head] = await Promise.all([store.health().catch((e) => ({ ok: false, error: (e as Error).message })), store.seq().catch(() => null), store.head().catch(() => null)]);
-      return json(res, 200, { chalk: "ok", version: "0.6.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
+      // Liveness must not queue behind a scan on the engine thread: serve the last
+      // known engine state and refresh it off the request path when older than 5 s.
+      const nedb = await healthSnapshot();
+      return json(res, 200, { chalk: "ok", version: CHALK_VERSION, nedb: { url: store.url, db: store.db, ...nedb }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
     }
     if (p === "/api/v1/openapi.json") return json(res, 200, openapiDocument(`${url.protocol}//${url.host}`));
     if (p === "/api/v1/meta") {
