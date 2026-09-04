@@ -5,6 +5,13 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.10 · League after a headline switch: "ball_security@1.0.0 rates ball_security, not third_down"
+
+- **Mark:** clicked League on Third Down after visiting Ball Security → the server's subject guard (v0.10.0) refused the request. Right guard, wrong caller: switching the headline back to third down never reset `state.rating`, so the Ball Security definition id rode along into the third-down League call.
+- Fix: the third-down headline path resets `state.rating` from the Home payload and every path records `state.ratingSubject`; League, saved-formula clicks and custom-formula saves pass a definition only when it belongs to the active subject.
+- Also, for the record: "where do I rate?" — nowhere, by the v0.11.0 cut Mark approved; the fan knobs are ★ my team, Who you got, How you feel on the Next up card.
+- Tests: static guard. 110/110 both stores.
+
 ## 2026-09-04 — v0.12.9 · the sharecard shows all six ratings
 
 - **Mark:** "its working great look" — first live render of the sharecard (hero, logo, ring, pills, footer with seq, PNG downloaded). It showed **four** rating tiles: six at a fixed 172 px did not fit the 846 px strip and the overflow guard silently dropped Explosiveness and Ball Security — the two TB is best at.

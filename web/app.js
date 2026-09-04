@@ -342,7 +342,7 @@ async function loadHome(defId, opts = {}) {
     const h = await api(`/api/v1/teams/${state.team}/home?season=${state.season}${defId ? `&definition=${encodeURIComponent(defId)}` : ""}`);
     if (slow) clearTimeout(slow);
     if (quiet && (state.team !== h.team || state.season !== h.season)) return; // fan moved on; drop it
-    state.home = h; state.rating = h.rating ? { summary: h.rating, snapshot: { definition_id: h.rating.definition_id, id: h.rating_snapshot_id } } : null;
+    state.home = h; state.rating = h.rating ? { summary: h.rating, snapshot: { definition_id: h.rating.definition_id, id: h.rating_snapshot_id } } : null; state.ratingSubject = "third_down";
     $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
     // Served from a snapshot built before the latest data change: show it, then re-pull once the background rebuild lands.
     // Stale-flagged serve: the server is rebuilding in the background (data or code version moved). Show the
@@ -576,7 +576,14 @@ async function renderHeadline(h, override) {
   const sj = state.headline || "third_down";
   $("#rc-label").textContent = `${headlineLabel(sj)} Rating`;
   $("#rc-why").dataset.ask = SUBJECT_Q[sj] || `How is Tampa rated on ${headlineLabel(sj).toLowerCase()}?`;
-  if (sj === "third_down" && !override) { renderRating(h); return; }
+  if (sj === "third_down" && !override) {
+    // Reset the applied-formula state to the Home rating — otherwise a definition applied under another headline
+    // (e.g. ball_security) leaks into League / Rate differently for third down (v0.12.10: "definition
+    // ball_security@1.0.0 rates ball_security, not third_down").
+    state.rating = h.rating ? { summary: h.rating, snapshot: { definition_id: h.rating.definition_id, id: h.rating_snapshot_id } } : null;
+    state.ratingSubject = "third_down";
+    renderRating(h); return;
+  }
   const r = override || (h.ratings || []).find((x) => x.subject === sj);
   if (!r) { $("#rc-score").textContent = "–"; $("#rc-rank").textContent = `no ${headlineLabel(sj).toLowerCase()} rating for ${state.season}`; $("#rc-line1").textContent = ""; $("#rc-components").innerHTML = ""; return; }
   const score = r.score ?? 0;
@@ -585,6 +592,7 @@ async function renderHeadline(h, override) {
   $("#rc-rank").innerHTML = `<b>#${r.rank}</b> of ${r.of}${r.provisional ? ' <span class="badge amber">provisional</span>' : ""}`;
   $("#rc-line1").textContent = `${r.definition_name} · ${r.sample} ${headlineUnit(sj)} · percentile_rank@1.0.0`;
   state.rating = { summary: { definition_id: r.definition_id, score: r.score, rank: r.rank, of: r.of }, snapshot: { definition_id: r.definition_id, id: r.snapshot_id } };
+  state.ratingSubject = sj;
   $("#rc-components").innerHTML = `<div class="muted">components…</div>`;
   try {
     const full = r.components ? r : await api(`/api/v1/ratings/${subjectPath(sj)}?team=${state.team}&season=${state.season}&definition=${encodeURIComponent(r.definition_id)}`);
@@ -946,7 +954,7 @@ async function rateDifferently() {
   const showCompare = async (a, b, anchor) => { const c = await api(`/api/v1/ratings/compare?team=${state.team}&season=${state.season}&a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`); const out = el(`<div></div>`); out.append(el(`<div class="h">${esc(c.a.summary.definition)} ${c.a.summary.score} → ${esc(c.b.summary.definition)} ${c.b.summary.score} (Δ ${c.disagreement.delta})</div><div class="statement">${esc(c.disagreement.headline)}</div>`)); for (const l of c.disagreement.lines.slice(0, 4)) out.append(el(`<div class="statement">${esc(l.sentence)}</div>`)); anchor.after(out); };
   for (const d of defs.definitions) {
     const b = el(`<button class="chip ${d.id === state.rating?.snapshot?.definition_id ? "on" : ""}">${esc(d.name)} v${esc(d.version)}</button>`);
-    b.onclick = async () => { try { const cur = state.rating?.snapshot?.definition_id; if (sj === "third_down" && cur && cur !== d.id) await showCompare(cur, d.id, sel); await applyDef(d.id); sel.querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); b.classList.add("on"); } catch (err) { sel.after(el(`<div class="err">${esc(err.message)}</div>`)); } };
+    b.onclick = async () => { try { const cur = state.ratingSubject === sj ? state.rating?.snapshot?.definition_id : undefined; if (sj === "third_down" && cur && cur !== d.id) await showCompare(cur, d.id, sel); await applyDef(d.id); sel.querySelectorAll(".chip").forEach((x) => x.classList.remove("on")); b.classList.add("on"); } catch (err) { sel.after(el(`<div class="err">${esc(err.message)}</div>`)); } };
     sel.append(b);
   }
   drawer.append(sel);
@@ -956,7 +964,7 @@ async function rateDifferently() {
     e.preventDefault();
     const fd = new FormData(form);
     const components = metrics.map(([k]) => ({ metric: k, weight: Number(fd.get(`w_${k}`) || 0) })).filter((c) => c.weight > 0);
-    try { const r = await api("/api/v1/rating-definitions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name"), subject: sj, components, author: "fan" }) }); $(".out", form).textContent = ""; const cur = state.rating?.snapshot?.definition_id; if (sj === "third_down" && cur) await showCompare(cur, r.definition.id, form); await applyDef(r.definition.id); }
+    try { const r = await api("/api/v1/rating-definitions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: fd.get("name"), subject: sj, components, author: "fan" }) }); $(".out", form).textContent = ""; const cur = state.ratingSubject === sj ? state.rating?.snapshot?.definition_id : undefined; if (sj === "third_down" && cur) await showCompare(cur, r.definition.id, form); await applyDef(r.definition.id); }
     catch (err) { $(".out", form).textContent = `${err.message}${err.detail ? ` — ${JSON.stringify(err.detail)}` : ""}`; }
   };
   drawer.append(form);
@@ -968,7 +976,8 @@ async function showLeague() {
   showCard(card);
   const drawer = $(".drawer", card);
   try {
-    const def = state.rating?.snapshot?.definition_id;
+    // Never send another subject's formula to this subject's league — the server refuses it (correctly).
+    const def = state.ratingSubject === sj ? state.rating?.snapshot?.definition_id : undefined;
     if (sj !== "third_down") {
       const l = await api(`/api/v1/ratings/${subjectPath(sj)}/league?season=${state.season}${def ? `&definition=${encodeURIComponent(def)}` : ""}`);
       drawer.innerHTML = `<div class="muted">${esc(l.definition.name)} v${esc(l.definition.version)} · ${l.population} teams${l.through_week ? ` · through week ${l.through_week}` : ""} · seq ${l.seq}</div>`;
