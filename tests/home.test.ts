@@ -126,6 +126,23 @@ test("badges: deterministic, league-relative, min-sample and min-population prot
   assert.ok(worst.map((b) => b.id).includes("third_down_problem"));
   assert.ok(worst.map((b) => b.id).includes("giveaway_machine"));
   for (const b of best) { assert.equal(b.of, 12); assert.ok(b.qualification_rule.includes("percentile")); }
+  // Every team in a 12-team league earns something: two identity badges at minimum.
+  for (let i = 0; i < 12; i++) {
+    const e = evaluateBadges(`T${i}`, pop);
+    assert.ok(e.length >= 2, `T${i} earned ${e.length}`);
+    assert.equal(e.filter((b) => b.kind === "signature").length, 1, `T${i} signature`);
+    assert.equal(e.filter((b) => b.kind === "heel").length, 1, `T${i} heel`);
+    assert.notEqual(e.find((b) => b.kind === "signature")!.metric, e.find((b) => b.kind === "heel")!.metric);
+    // One tier badge per metric+side: never both THIRD DOWN MONSTER and CONVERTS.
+    const keys = e.filter((b) => b.kind === "tier").map((b) => `${b.metric}:${b.tone}`);
+    assert.equal(new Set(keys).size, keys.length, `T${i} duplicate tier badges: ${keys.join(",")}`);
+  }
+  assert.ok(!ids.includes("converts")); // T11 is elite on third down -> tier-1 only
+  // Percentiles are "higher is better" everywhere: BALL SECURITY (lowest turnover rate) reads high, GIVEAWAY MACHINE reads low.
+  assert.ok(best.find((b) => b.id === "ball_security")!.percentile! >= 90);
+  assert.ok(worst.find((b) => b.id === "giveaway_machine")!.percentile! <= 10);
+  const mid = evaluateBadges("T5", pop);
+  assert.ok(mid.some((b) => b.kind === "signature") && mid.some((b) => b.kind === "heel"));
   // Small sample -> no third-down badges even if elite.
   const small = [...pop.slice(0, 11), { ...mk("T11", 0.9, 1, 0.5, 0, 0.9, 20, 100) }];
   assert.equal(evaluateBadges("T11", small).length, 0);

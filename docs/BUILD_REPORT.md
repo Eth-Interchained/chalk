@@ -4,6 +4,18 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.7.1 · badges for everyone: tier-2 thresholds + SIGNATURE / ACHILLES HEEL identity badges
+
+### SHIPPED
+- **Mark:** "no badges earned — let's make sure every team earns something." Eight top/bottom-10% badges meant most teams (TB included) showed nothing.
+- Tier 2 badges at the top/bottom quarter for the same five metrics (CONVERTS / STALLS ON THIRD, POSITIVE / NEGATIVE PLAYS, BIG PLAY THREAT / DINK AND DUNK, PROTECTS THE BALL / LOOSE BALL, STEADY / INCONSISTENT). One badge per metric+side: a tier-1 qualifier does not also get the tier-2 one.
+- Identity badges, always awarded when the team has the minimum sample: **SIGNATURE · <trait>** (highest league-oriented percentile across EPA/play, success, explosiveness, ball security, third down) and **ACHILLES HEEL · <trait>** (lowest). Same population, same rank/percentile/sample fields, versioned 1.0.0; `kind` field (`tier | signature | heel`) on every EarnedBadge. Client sorts tiers first, styles identity badges dashed, and asks "signature strength / biggest weakness" questions on tap.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: every team in a 12-team synthetic league earns ≥ 2 badges with exactly one signature and one heel on different metrics; no duplicate tier per metric+side; small-sample and tiny-league guards unchanged. Live: TB 2025 Home now carries badges (see PR body for the exact set).
+
+---
+
 ## 2026-09-04 — v0.7.0 · The Record: answers served by provenance, browsable per team
 
 ### SHIPPED

@@ -279,8 +279,9 @@ function renderScout(s, n) {
 }
 function renderBadges(badges) {
   const b = $("#h-badges"); b.innerHTML = "";
-  for (const x of badges) b.append(el(`<button class="badge-pill ${x.tone}" title="${esc(x.qualification_rule)} · ${x.percentile}th pct · #${x.rank} of ${x.of} · n=${x.sample}" data-ask="Why does Tampa have the ${esc(x.name.toLowerCase())} badge?">${esc(x.emoji)} ${esc(x.name)}</button>`));
-  if (!badges.length) b.append(el(`<span class="muted">No badges earned — top/bottom 10% of the league on a metric earns one.</span>`));
+  const order = { tier: 0, signature: 1, heel: 2 };
+  for (const x of [...badges].sort((p, q) => (order[p.kind] ?? 0) - (order[q.kind] ?? 0))) b.append(el(`<button class="badge-pill ${x.tone} ${esc(x.kind ?? "tier")}" title="${esc(x.description)} · ${esc(x.qualification_rule)} · ${x.percentile}th pct · #${x.rank} of ${x.of} · n=${x.sample}" data-ask="${x.kind === "signature" ? `What is Tampa's signature strength and why?` : x.kind === "heel" ? `What is Tampa's biggest weakness and why?` : `Why does Tampa have the ${esc(x.name.toLowerCase())} badge?`}">${esc(x.emoji)} ${esc(x.name)}</button>`));
+  if (!badges.length) b.append(el(`<span class="muted">Badges need a full league sample — not enough snaps yet this season.</span>`));
 }
 
 // ---------------------------------------------------------------- identity
