@@ -24,7 +24,7 @@ const TEAMS = {
   LA: ["Los Angeles Rams", "#FFA300"], LAR: ["Los Angeles Rams", "#FFA300"], LAC: ["Los Angeles Chargers", "#FFC20E"], LV: ["Las Vegas Raiders", "#C4C9CC"],
   MIA: ["Miami Dolphins", "#008E97"], MIN: ["Minnesota Vikings", "#FFC62F"], NE: ["New England Patriots", "#C60C30"], NO: ["New Orleans Saints", "#D3BC8D"],
   NYG: ["New York Giants", "#5B8DFF"], NYJ: ["New York Jets", "#2FBF71"], PHI: ["Philadelphia Eagles", "#00B38F"], PIT: ["Pittsburgh Steelers", "#FFB612"],
-  SF: ["San Francisco 49ers", "#B3995D"], SEA: ["Seattle Seahawks", "#69BE28"], TB: ["Tampa Bay Buccaneers", "#FF4B3E"], TEN: ["Tennessee Titans", "#4B92DB"], WAS: ["Washington Commanders", "#FFB612"],
+  SF: ["San Francisco 49ers", "#B3995D"], SEA: ["Seattle Seahawks", "#69BE28"], TB: ["Tampa Bay Buccaneers", "#FF4B3E"], TEN: ["Tennessee Titans", "#4B92DB"], WAS: ["Washington Commanders", "#FFB612"], WSH: ["Washington Commanders", "#FFB612"],
 };
 const teamName = (t) => (TEAMS[t]?.[0] ?? t).split(" ").slice(0, -1).join(" ") || t;
 // Team logos: config comes from /api/v1/meta (CHALK_TEAM_LOGOS=0 turns them off server-side).
@@ -103,6 +103,21 @@ function syncUrl() { const u = new URL(location.href); u.searchParams.set("team"
 function renderSuggest() { const s = $("#suggest"); s.innerHTML = ""; for (const q of state.meta.suggested_questions) s.append(el(`<button class="chip" data-ask="${esc(q)}">${esc(q.replaceAll("Tampa", teamName(state.team)))}</button>`)); }
 
 // ------------------------------------------------------------------ home
+// Provenance drawer: the causal graph as a readable list — record counts by collection, one line per
+// node (collection · label · hash prefix), never the raw records (an observation carries up to 500
+// evidence ids; dumping them buried the graph). The raw JSON stays one link away.
+function renderProvenance(p, coll, id) {
+  const box = el(`<div></div>`);
+  box.append(el(`<div class="h">Provenance · ${p.node_count} records · ${p.edge_count} edges · depth ${p.depth}</div><div class="muted">${esc(Object.entries(p.collections || {}).map(([k, v]) => `${k.replace("football_", "")}: ${v}`).join(" · "))}</div>`));
+  const prov = el(`<div class="prov"></div>`);
+  for (const n of (p.nodes || []).slice(0, 60)) prov.append(el(`<div><span class="c">${esc(String(n._coll || "").replace("football_", ""))}</span><span>${esc(n.label || n._id)}</span><span class="hsh">${esc(String(n._hash || "").slice(0, 12))}</span></div>`));
+  box.append(prov);
+  if (p.node_count > 60) box.append(el(`<div class="muted">… ${p.node_count - 60} more</div>`));
+  const ev = (p.records || []).find((r) => Array.isArray(r.data?.evidence_ids))?.data;
+  if (ev) box.append(el(`<div class="muted" style="margin-top:6px">${ev.evidence_ids.length} of ${ev.evidence_count ?? ev.evidence_ids.length} evidence plays behind this answer — open Show evidence on a live card to page through them.</div>`));
+  box.append(el(`<div class="muted" style="margin-top:6px"><a href="/api/v1/provenance/${esc(coll)}/${encodeURIComponent(id)}" target="_blank" rel="noopener noreferrer">raw provenance JSON ↗</a></div>`));
+  return box;
+}
 function ago(iso) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
@@ -147,7 +162,7 @@ function recordedCard(it) {
   const re = el(`<button class="chip">Re-ask live</button>`); re.onclick = () => ask(it.question, { live: true }); $(".card-foot", card).prepend(re);
   $(".act-coach", card).onclick = () => card.classList.toggle("coach-on");
   card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => { try { const r = await fanPost("/api/v1/fans/reactions", { target_coll: "football_observations", target_id: it.id, reaction: b.dataset.kind }); if (r) { b.classList.add("on"); b.textContent = `${b.dataset.kind === "agree" ? "👍" : "👎"} ${r.replaced ? "changed" : "saved"} · #${r.chain_index}`; loadRecord(); } } catch (e) { b.textContent = e.message; } }; });
-  $(".act-provenance", card).onclick = async () => { try { const pv = await api(`/api/v1/provenance/football_observations/${encodeURIComponent(it.id)}`); drawer.innerHTML = `<div class="h">Provenance</div><pre class="code">${esc(JSON.stringify(pv, null, 2)).slice(0, 6000)}</pre>`; } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
+  $(".act-provenance", card).onclick = async () => { drawer.innerHTML = `<div class="muted">tracing football_observations/${esc(it.id)}…</div>`; try { const pv = await api(`/api/v1/provenance/football_observations/${encodeURIComponent(it.id)}`); drawer.innerHTML = ""; drawer.append(renderProvenance(pv, "football_observations", it.id)); } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
   return card;
 }
 
@@ -527,9 +542,7 @@ async function ask(question, opts = {}) {
     drawer.innerHTML = `<div class="muted">tracing ${esc(coll)}/${esc(id)}…</div>`;
     try {
       const p = await api(`/api/v1/provenance/${coll}/${encodeURIComponent(id)}`);
-      drawer.innerHTML = `<div class="h">Provenance · ${p.node_count} records · ${p.edge_count} edges · depth ${p.depth}</div><div class="muted">${esc(Object.entries(p.collections).map(([k, v]) => `${k.replace("football_", "")}: ${v}`).join(" · "))}</div>`;
-      const prov = el(`<div class="prov"></div>`); for (const n of p.nodes.slice(0, 60)) prov.append(el(`<div><span class="c">${esc(n._coll.replace("football_", ""))}</span><span>${esc(n.label)}</span><span class="hsh">${esc(n._hash.slice(0, 12))}</span></div>`)); drawer.append(prov);
-      if (p.node_count > 60) drawer.append(el(`<div class="muted">… ${p.node_count - 60} more · <code>GET /api/v1/provenance/${esc(coll)}/${esc(id)}</code></div>`));
+      drawer.innerHTML = ""; drawer.append(renderProvenance(p, coll, id));
     } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   };
 }
