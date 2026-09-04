@@ -172,3 +172,14 @@ test("verify: the whole test store is tamper-evident after all writes", { skip }
   assert.ok(v.objects_checked > 0, `objects_checked=${v.objects_checked}`);
   console.log(`verify: objects_checked=${v.objects_checked} seq=${v.seq}`);
 });
+
+test("watch loop is deep by default; CHALK_WATCH_DEEP=0 opts out; --deep always wins", async () => {
+  const { resolveWatchDeep } = await import("../src/ingest/watch_config.ts");
+  assert.equal(resolveWatchDeep(undefined, undefined), true);
+  assert.equal(resolveWatchDeep(undefined, ""), true);
+  assert.equal(resolveWatchDeep(undefined, "1"), true);
+  assert.equal(resolveWatchDeep(undefined, "0"), false);
+  assert.equal(resolveWatchDeep(undefined, " false "), false);
+  assert.equal(resolveWatchDeep(undefined, "off"), false);
+  assert.equal(resolveWatchDeep(true, "0"), true);
+});

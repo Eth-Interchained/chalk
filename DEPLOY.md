@@ -51,7 +51,7 @@ sudo cp /opt/chalk/deploy/chalk.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now chalk
 curl -s http://127.0.0.1:4040/api/v1/health     # chalk ok, nedb embedded, llm has_key true
-journalctl -u chalk -f                          # "store: embedded NEDB at /opt/chalk/chalk-data", "warmup: home TB 2025 ready in ...ms", "watch 2026: ..."
+journalctl -u chalk -f                          # "store: embedded NEDB at /opt/chalk/chalk-data", "warmup: home TB 2025 ready in ...ms", "watch: season 2026 every 1800s in-process (embedded store, deep=true — context included)", "watch 2026: ..."
 ```
 
 While `chalk` runs it owns `/opt/chalk/chalk-data`; to run a CLI command against the data, `sudo systemctl stop chalk` first (or point the CLI at a copy).
@@ -82,7 +82,7 @@ curl -sN -X POST https://sports-rater.com/api/v1/ask -H 'content-type: applicati
 | Ingest status | `curl -s http://127.0.0.1:4040/api/v1/ingest/status \| head -c 800` |
 | Force a re-ingest now | `sudo systemctl restart chalk` (first watch tick is immediate) |
 | Backup | `sudo systemctl stop chalk`, tar `/opt/chalk/chalk-data`, start. Content-addressed and hash-chained; `chalk verify` after restore. |
-| Game day | the in-process watch keeps polling; set `CHALK_WATCH_INTERVAL=600` in `.env` for 10-minute ticks and restart `chalk`. Premium TheSportsDB key in `.env` unlocks the live scoreboard path. |
+| Game day | the in-process watch keeps polling (plays + context every tick; `CHALK_WATCH_DEEP=0` to skip context if the source throttles); set `CHALK_WATCH_INTERVAL=600` in `.env` for 10-minute ticks and restart `chalk`. Premium TheSportsDB key in `.env` unlocks the live scoreboard path. |
 
 ## Security posture
 

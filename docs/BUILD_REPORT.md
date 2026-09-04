@@ -4,6 +4,23 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.6.2 · watch loop deep by default (+ v0.6.1 nedb-engine ^2.8.4 pin)
+
+### SHIPPED
+- **Watch loop pulls play context by default.** `chalk serve` (in-process watch) and `chalk watch` now ingest participation + charting on every tick. Before, context required `--deep` on the command line — the systemd unit did not pass it, so a DEPLOY.md deployment would have collected 2026 plays all season with no formation/personnel context and only surfaced it as "context not ingested for this season" in answers. `src/ingest/watch_config.ts` — `resolveWatchDeep(flag, env)`: `--deep` wins, `CHALK_WATCH_DEEP=0|false|no|off` opts out, otherwise deep. Serve logs `deep=true — context included` so the state is visible in journalctl.
+- One-shot `chalk ingest` is unchanged: plays first (`deep:false`), context via `--context-only` or `--deep`. Splitting keeps the first ratings ~3 min away and isolates NFLData throttling to the slow pass.
+- v0.6.1: nedb-engine / nedb-engine-client pinned `^2.8.4`; the 2.8.4 napi addon projects `_caused_by` on get, so embedded TRACE/lineage matches HTTP mode with no CHALK-side shim.
+- README quick start uses `node bin/chalk.ts …` (not `npx chalk`, which relies on the package `bin` and would fall through to the unrelated registry package `chalk` if that resolution ever failed).
+
+### VERIFIED ON THE REAL SYSTEM
+- `--context-only` on a season with zero played games is a no-op that exits 0 (games list is built from records with a result) — confirmed by reading `ingest.ts` step 3; the 2026 context command is therefore unnecessary until games are played.
+- Tests: resolveWatchDeep matrix (default / "" / "1" / "0" / " false " / "off" / flag override); full suite on both stores.
+
+### NEXT
+- Deploy per DEPLOY.md; first live watch ticks on 2026-09-10.
+
+---
+
 ## 2026-09-04 — v0.6.0 · NEDB embedded (no daemon), one engine per process
 
 ### SHIPPED
