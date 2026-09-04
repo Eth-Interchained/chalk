@@ -22,7 +22,7 @@ test("shareCopy: third-down default and a subject headline; unknown headline fal
   const td = shareCopy(home, "third_down", "https://sports-rater.com");
   assert.equal(td.title, "TB Third Down 66/100 · #11 of 32 · 227 third downs — Sports-Rater");
   assert.equal(td.url, "https://sports-rater.com/s/TB?season=2025");
-  assert.equal(td.image, "https://sports-rater.com/hero/TB.jpg");
+  assert.equal(td.image, "https://sports-rater.com/hero/TB.jpg?v=2");
   assert.match(td.text, /Tampa Bay Buccaneers 2025 — Third Down 66\/100/); assert.match(td.text, /Signature: Ball Security · Achilles heel: Success Rate/); assert.match(td.text, /Formula: Sports-Rater Third Down/); assert.ok(td.text.endsWith(td.url));
   const off = shareCopy(home, "offense", "https://sports-rater.com");
   assert.equal(off.score, 48); assert.equal(off.rank, 19); assert.equal(off.url, "https://sports-rater.com/s/TB?season=2025&headline=offense"); assert.match(off.text, /1065 plays/);
@@ -38,7 +38,7 @@ test("injectOg: OG + Twitter tags before </head>, title replaced, attributes esc
   c.title = `TB "quotes" & <angles>`;
   const out = injectOg(html, c);
   assert.ok(out.includes(`<title>TB &quot;quotes&quot; &amp; &lt;angles&gt;</title>`));
-  assert.ok(out.includes(`<meta property="og:image" content="https://sports-rater.com/hero/TB.jpg" />`));
+  assert.ok(out.includes(`<meta property="og:image" content="https://sports-rater.com/hero/TB.jpg?v=2" />`));
   assert.ok(out.includes(`<meta name="twitter:card" content="summary_large_image" />`));
   assert.ok(out.indexOf("<!-- sharecard:og -->") < out.indexOf("</head>"));
   const twice = injectOg(out, c);
@@ -61,10 +61,18 @@ test("default OG image (v0.12.4): index.html ships a branded default inside the 
   const { readFileSync, statSync } = await import("node:fs");
   const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
   assert.ok(html.includes("<!-- sharecard:og -->") && html.includes("<!-- /sharecard:og -->"));
-  assert.match(html, /og:image" content="https:\/\/sports-rater\.com\/og\/default\.jpg"/);
+  assert.match(html, /og:image" content="https:\/\/sports-rater\.com\/og\/default\.jpg\?v=2"/);
   assert.ok(statSync(new URL("../web/og/default.jpg", import.meta.url)).size > 30_000, "default.jpg is a real image");
   const c = shareCopy(home, "third_down", "https://sports-rater.com");
   const out = injectOg(html, c);
   assert.equal((out.match(/property="og:title"/g) || []).length, 1, "exactly one og:title after injection");
-  assert.ok(out.includes(`<meta property="og:image" content="https://sports-rater.com/hero/TB.jpg" />`) && !out.includes("/og/default.jpg"), "team landing carries the hero, not the default");
+  assert.ok(out.includes(`<meta property="og:image" content="https://sports-rater.com/hero/TB.jpg?v=2" />`) && !out.includes("/og/default.jpg"), "team landing carries the hero, not the default");
+});
+
+test("static MIME map declares every image type we ship as og:image (v0.12.13): crawlers drop an octet-stream image", async () => {
+  const { readFileSync } = await import("node:fs");
+  const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
+  const mime = server.slice(server.indexOf("const MIME: Record<string, string> = {"), server.indexOf("};", server.indexOf("const MIME")));
+  for (const ext of ['".jpg"', '".jpeg"', '".png"', '".svg"', '".ico"', '".webmanifest"']) assert.ok(mime.includes(ext), `MIME map has ${ext}`);
+  assert.ok(mime.includes('"image/jpeg"'), "jpg → image/jpeg");
 });
