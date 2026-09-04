@@ -4,6 +4,17 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.5 · embedded engine on a worker thread: the HTTP thread never blocks on a scan
+
+### SHIPPED
+- **Mark (VPS):** "logs say rebuilding in background but it's stalled there." Root cause: `NedbCore.query/put/verify` are SYNCHRONOUS napi calls. `buildHome` = ~8 season-scale scans ≈ 25 s on the VPS, and it ran on the HTTP thread — so "rebuilding in background" froze every request (the 502s and 4 s Home responses seen earlier were the same thing). Trigger: stale snapshot after two ingest ticks. Root cause: synchronous engine on the serving thread.
+- `src/store/embedded_worker.ts` (worker entry: opens EmbeddedStore, answers `{id, method, args}`, forwards engine log lines and cache-hit events) + `src/store/worker_store.ts` (`WorkerStore implements Store`: promise-per-message proxy, ready/fatal handshake, crash/exit surfaced to every pending call, `close()` flushes then terminates). `chalk serve` boots the engine on the worker (`store: embedded NEDB at … (engine on a worker thread)`); one-shot CLI commands stay in-thread; `CHALK_EMBEDDED_WORKER=0` forces in-thread for serve. Shutdown awaits the flush.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: full Store surface across the thread boundary (put/get/query/queryAt/batchPut with Map/head/seq/verify/trace/client.*, cache TTL + hit events + invalidate, error propagation, closed-store rejection); event-loop liveness under 30 concurrent scans; 81/81 both stores. Live on the local 48,771-play store: `/home?fresh=1` (≈11 s rebuild) running while `/health` answers in single-digit ms — before this change the same probe waited for the rebuild.
+
+---
+
 ## 2026-09-04 — v0.8.4 · Dashboard | Feed tabs move into the header bar
 
 ### SHIPPED

@@ -51,7 +51,7 @@ sudo cp /opt/chalk/deploy/chalk.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now chalk
 curl -s http://127.0.0.1:4040/api/v1/health     # chalk ok, nedb embedded, llm has_key true
-journalctl -u chalk -f                          # "store: embedded NEDB at /opt/chalk/chalk-data", "warmup: persisted home snapshot ... serves instantly" (first boot ever: "building"; ~30s once), "watch: season 2026 every 1800s in-process (embedded store, deep=true — context included)", "watch 2026: ..."
+journalctl -u chalk -f                          # "store: embedded NEDB at /opt/chalk/chalk-data (engine on a worker thread)", "warmup: persisted home snapshot ... serves instantly" (first boot ever: "building"; ~30s once), "watch: season 2026 every 1800s in-process (embedded store, deep=true — context included)", "watch 2026: ..."
 ```
 
 While `chalk` runs it owns `/opt/chalk/chalk-data`; to run a CLI command against the data, `sudo systemctl stop chalk` first (or point the CLI at a copy).
@@ -89,7 +89,7 @@ curl -sN -X POST https://sports-rater.com/api/v1/ask -H 'content-type: applicati
 
 ## Security posture
 
-- NEDB runs inside the CHALK process; nothing listens but CHALK on loopback. (Daemon mode remains available via `NEDB_URL` for multi-process setups.)
+- NEDB runs inside the CHALK process — on a worker thread under `chalk serve`, so a 25 s cold rebuild never freezes HTTP (`CHALK_EMBEDDED_WORKER=0` forces in-thread); nothing listens but CHALK on loopback. (Daemon mode remains available via `NEDB_URL` for multi-process setups.)
 - CHALK has no accounts and stores no personal data: fan writes carry a client-computed hash + a nickname handle. Moderation, when needed, is a hide-by-hash list — nothing is deleted from the chain.
 - Rate limits: 20 fan writes burst per handle (1 per 10 s refill), 60 per address (1 per 5 s). nginx caps bodies at 64 KB.
 - The only paid dependency is optional (TheSportsDB Premium, ~$9/mo). Everything else is owned stack: NEDB, AiAS/PIN, this box.
