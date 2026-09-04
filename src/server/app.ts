@@ -856,7 +856,9 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
           store.client.queryFull(`FROM ${COLL.ingest_events}`).then((r) => r.rows as IngestEventLike[]),
           store.client.queryFull(`FROM ${PULSE_EVENTS}`).then((r) => r.rows as PulseEventLike[]).catch((e) => { log(`ingest watcher: ${PULSE_EVENTS} unreadable (${(e as Error).message}) — pulse ignored in data stamp`); return [] as PulseEventLike[]; }),
         ]);
-        const next = dataStampFrom(ingestEvents, pulseEvents);
+        // The code version rides along: a deploy that changes rating math must rebuild every snapshot once,
+        // without anyone remembering ?fresh=1 (v0.12.2). Data-only ticks still hold the stamp.
+        const next = `${dataStampFrom(ingestEvents, pulseEvents)}:v${CHALK_VERSION}`;
         if (dataStamp !== null && next !== dataStamp) {
           store.invalidateCache();
           invalidateLeagueCache();
