@@ -14,8 +14,10 @@ import { PLAY_CONTEXT } from "../ingest/context.ts";
 import { GAME_STATE, type GameStateDoc } from "../ingest/pulse.ts";
 import type { Game, Play } from "../model/football.ts";
 import { evaluateBadges, type BadgePopulationMember, type EarnedBadge } from "../rating/badges.ts";
-import { THIRD_DOWN_DEFAULT_V1, type RatingDefinition } from "../rating/definitions.ts";
+import { CARD_SUBJECTS, THIRD_DOWN_DEFAULT_V1, type RatingDefinition } from "../rating/definitions.ts";
 import { leagueThirdDown, rateThirdDown, type RateResult } from "../rating/league.ts";
+import { rateSubject } from "../rating/rank.ts";
+import { opponentReport } from "../engine/opponent.ts";
 import { COLL } from "../store/collections.ts";
 import { ChalkStore, nqlStr, type NedbRow } from "../store/nedb.ts";
 import { summarizeRating } from "./intents.ts";
@@ -63,6 +65,10 @@ export interface HomePayload {
   next_game: { game: Game | null; pulse: GameStateDoc | null; opponent: string | null; opponent_rating: ReturnType<typeof summarizeRating> | null } | null;
   weakest: Array<{ situation: string; snaps: number; epa_per_play: number | null; epa_vs_team: number | null }>;
   strongest: Array<{ situation: string; snaps: number; epa_per_play: number | null; epa_vs_team: number | null }>;
+  /** The rating card: one line per subject, each traceable to a stored snapshot. */
+  ratings: Array<{ subject: string; label: string; definition_id: string; definition_name: string; score: number | null; rank: number; of: number; provisional: boolean; sample: number; snapshot_id: string; top_component: { label: string; percentile: number | null } | null }>;
+  /** Compact scouting card for the next opponent (their offense), null when no opponent. */
+  scout: { opponent: string; snaps: number; pass_pct: number | null; epa_per_play: number | null; shotgun_pct: number | null; personnel: string | null; third_medium: { snaps: number; pass_pct: number | null; conversion_pct: number | null } | null; weakest: string | null; strongest: string | null; statements: string[] } | null;
   context_coverage: { plays: number; with_context: number } | null;
   computed_at: { seq: number; head: string };
 }
@@ -116,6 +122,47 @@ export async function buildHome(store: ChalkStore, team: string, season: number,
     log(`home: context coverage unavailable: ${(e as Error).message}`);
   }
 
+  // Rating card — every subject, each a stored snapshot with a formula.
+  const ratings: HomePayload["ratings"] = [];
+  for (const c of CARD_SUBJECTS) {
+    try {
+      const r = await rateSubject(store, team, season, c.definition, log);
+      if (!r) continue;
+      const top = [...r.snapshot.components].sort((a, b) => (b.contribution ?? 0) - (a.contribution ?? 0))[0];
+      ratings.push({ subject: c.subject, label: c.label, definition_id: c.definition.id, definition_name: c.definition.name, score: r.snapshot.score, rank: r.rank, of: r.population, provisional: r.snapshot.provisional, sample: r.snapshot.sample_size, snapshot_id: r.snapshot.id, top_component: top ? { label: top.label, percentile: top.normalized === null ? null : Math.round(top.normalized * 100) } : null });
+    } catch (e) {
+      log(`home: rating ${c.subject} failed: ${(e as Error).message}`);
+    }
+  }
+
+  // Scout card: the next opponent's offense in three numbers + the engine's sentences.
+  let scout: HomePayload["scout"] = null;
+  if (opponent) {
+    try {
+      const of = baseFilter(opponent, season, "offense");
+      const { rows: orows, ctx: octx, seq: oseq, head: ohead } = await loadTeamPlaysWithContext(store, of);
+      if (orows.length) {
+        const rep = opponentReport(team, orows, of, octx, { seq: oseq, head: ohead });
+        const tm = rep.sections.find((s) => s.key === "third_medium");
+        const pct = (v: number | null) => (v === null ? null : round(v * 100, 1));
+        scout = {
+          opponent,
+          snaps: rep.baseline.attempts,
+          pass_pct: pct(rep.baseline.pass_rate),
+          epa_per_play: round(rep.baseline.epa_per_play, 3),
+          shotgun_pct: rep.baseline_patterns ? pct(rep.baseline_patterns.shotgun_rate) : null,
+          personnel: rep.baseline_patterns?.personnel[0] ? `${rep.baseline_patterns.personnel[0].key} on ${pct(rep.baseline_patterns.personnel[0].share)}%` : null,
+          third_medium: tm ? { snaps: tm.metrics.attempts, pass_pct: pct(tm.metrics.pass_rate), conversion_pct: pct(tm.metrics.conversion_rate) } : null,
+          weakest: rep.weakest[0]?.label ?? null,
+          strongest: rep.strongest[0]?.label ?? null,
+          statements: rep.statements.slice(0, 4),
+        };
+      }
+    } catch (e) {
+      log(`home: scout ${opponent} failed: ${(e as Error).message}`);
+    }
+  }
+
   const fmt = (b: NonNullable<typeof scan>["weakest"][number]) => ({ situation: b.label, snaps: b.metrics.attempts, epa_per_play: round(b.metrics.epa_per_play, 3), epa_vs_team: round(b.epa_delta_vs_team, 3) });
   log(`home ${team} ${season} built in ${Date.now() - t0}ms`);
   return {
@@ -130,6 +177,8 @@ export async function buildHome(store: ChalkStore, team: string, season: number,
     next_game: nextGame || pulse ? { game: nextGame, pulse, opponent, opponent_rating } : null,
     weakest: scan ? scan.weakest.slice(0, 3).map(fmt) : [],
     strongest: scan ? scan.strongest.slice(0, 3).map(fmt) : [],
+    ratings,
+    scout,
     context_coverage,
     computed_at: { seq, head },
   };

@@ -19,14 +19,14 @@ question
 
 No computer vision. No hosted database. No model doing arithmetic.
 
-## What runs today (v0.2.0)
+## What runs today (v0.3.0)
 
 | Layer | What it does |
 | --- | --- |
 | `src/source/` | `FootballSource` contract + **NFLData** adapter (nflverse gold layer, verified against the live OpenAPI). `PulseSource` contract + **TheSportsDB** adapter for near-live scores (Pulse v1). Licensing registry per dataset. |
 | `src/ingest/` | Immutable raw observations, normalized plays/games with lineage, idempotent re-runs (`source_hash`), upstream-change detection with `football_source_changes` events, an ingest event per run, pulse ticks. **Play context** (`--context-only` / `--deep`): participation + charting joined into `football_play_context` — formation, personnel group, motion, play-action, pressure, box counts. |
 | `src/engine/` | Situation filter (validate → coarse NQL → fine filter in code), metrics with a sample-size ladder, **third-down analysis**, **tendency vs baseline** (with formation/personnel **context patterns**), **A/B comparison**, **30-bucket situation scan**, **season-vs-game deviation**, **trend** (rating week over week, as known then) + recent form, **opponent report**. |
-| `src/rating/` | Versioned rating definitions, percentile-rank normalization, 0–100 snapshots that record population, weights, raw and normalized values; custom profiles; deterministic **disagreement explainer**; **badges** (league-relative, versioned, min-sample protected). |
+| `src/rating/` | Versioned rating definitions over **six subjects** (Offense, Defense, Third Down, Red Zone, Explosiveness, Ball Security), percentile-rank normalization, 0–100 snapshots that record population, weights, raw and normalized values; **power rankings** with week-over-week movement; custom profiles; deterministic **disagreement explainer**; **badges**. |
 | `src/llm/` | OpenAI-compatible client (inactivity-only stream deadline), versioned prompts, planner with validation + rule fallback, streaming explainer that stores every answer as an observation `caused_by` the calculations it used. |
 | `src/server/` | Zero-framework HTTP API (OpenAPI at `/api/v1/openapi.json`), SSE `POST /api/v1/ask`, provenance routes (`TRACE caused_by` as JSON), static client. |
 | `web/` | **Sports-Rater Home**: team-colored hero with badges, rating ring, trend sparkline, recent form, last game with deviation, next up with opponent snapshot and *Scout them*, weak spots that ask on tap; ask bar, streamed answers, evidence drawer (tap a play to ask about it), coach view, *rate differently*, league table, provenance viewer. |
@@ -79,6 +79,8 @@ chalk rate --team TB --season 2025 [--definition third_down_default@1.0.0]
 chalk scan --team TB --season 2025
 chalk league --season 2025
 chalk pulse [--watch] [--interval 120]
+chalk watch --season 2026 [--interval 1800]      # re-ingest + pulse on a cadence (the only polling loop)
+chalk rankings --season 2025 [--definition offense_default@1.0.0]
 chalk verify
 chalk serve [--port 4040] [--host 127.0.0.1]
 ```
@@ -95,7 +97,9 @@ Full document: `GET /api/v1/openapi.json`. Highlights:
 | `GET /api/v1/ratings/compare?team=TB&season=2025&a=…&b=…` | Why two formulas disagree, per component, in points |
 | `POST /api/v1/rating-definitions` | Save a custom formula (weights normalized, versioned in NEDB) |
 | `GET /api/v1/analyses/scan?team=TB&season=2025` | Situations hurting/helping the team most, min-sample protected |
-| `GET /api/v1/teams/TB/home?season=2025` | Home composite: rating, trend, badges, form, last game + deviation, next game + opponent, weak spots |
+| `GET /api/v1/teams/TB/home?season=2025` | Home composite: rating card (6 subjects), trend, badges, form, last game + deviation, next game + scout card, weak spots |
+| `GET /api/v1/ratings/offense?team=TB&season=2025` | Any subject: `offense`, `defense`, `red-zone`, `explosiveness`, `ball-security` — snapshot + formula + team profile |
+| `GET /api/v1/rankings?season=2025[&definition=]` | Power rankings with movement, risers and fallers |
 | `GET /api/v1/ratings/third-down/trend?team=TB&season=2025` | Rating week over week, as known then |
 | `GET /api/v1/badges?team=TB&season=2025` | Earned badges with qualification rules |
 | `GET /api/v1/reports/opponent?team=TB[&opponent=CAR]` | Opponent report: six situations with formation/personnel context, weak/strong spots |
@@ -121,15 +125,23 @@ Every question compiles to this (the model proposes it; `validateFilter` decides
 Definitions that matter (all in `src/engine/metrics.ts`, `src/model/football.ts`):
 conversion = `first_down || touchdown` · success = `epa > 0` · explosive = pass ≥ 20 / run ≥ 12 yds · garbage time = Q4 with a 17+ gap or Q3+ with 25+ · distance buckets 1–3 / 4–6 / 7–10 / 11+ · confidence ladder n<10 insufficient, <25 low, <60 moderate, else strong.
 
-## Rating
+## Ratings
 
-`Sports-Rater Third Down v1.0.0` = conversion rate 50% · EPA/play 30% · success rate 20%, each percentile-ranked against the league population for the same scope, weighted, ×100. Why those weights is written in `src/rating/definitions.ts`. A second built-in, `Explosive & Clean`, exists to prove two formulas over the same evidence produce different, explainable scores.
+Every rating is a versioned definition (`src/rating/definitions.ts`, with the *why* of each weight) over a deterministic metric surface, percentile-ranked against the league for the same season, weighted, ×100:
+
+- **Offense** v1 — EPA/play 30 · success 20 · explosive 15 · third-down conversion 15 · red-zone TD rate 10 · turnover rate 10 (lower is better)
+- **Defense** v1 — the same surface over the snaps the defense faced, directions flipped
+- **Third Down** v1 — conversion 50 · EPA 30 · success 20 (plus `Explosive & Clean` as a second philosophy)
+- **Red Zone** v1 — TD rate per snap 50 · EPA 30 · success 20
+- **Explosiveness** / **Ball Security** — single-metric
+
+Every snapshot records population, weights, raw and normalized values, points per component, sample size and a `provisional` flag. Custom profiles: `POST /api/v1/rating-definitions` with a `subject`.
 
 ## Tests
 
 ```bash
 npm run typecheck
-npm test              # node --test — 46 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
+npm test              # node --test — 50 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
 ```
 
 The frozen fixture is the real game `2025_18_CAR_TB` (159 plays as returned by NFLData on 2026-09-03). Ground truth asserted exactly: TB 8-of-15 on third down, 2-of-7 on third-and-long, CAR 1-of-8. The model is never required for analytics tests.
