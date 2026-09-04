@@ -264,3 +264,13 @@ test("agent handoff docs (v0.12.14): AGENTS.md and LORE.md exist, carry the doct
   assert.ok(readme.includes("AGENTS.md") && readme.includes("LORE.md"), "README links the handoff docs");
   assert.ok(agents.startsWith("<!--\n  SPDX-License-Identifier: BUSL-1.1") && lore.startsWith("<!--\n  SPDX-License-Identifier: BUSL-1.1"), "SPDX headers");
 });
+
+test("Show evidence on recorded cards (v0.12.15): shared drawer renderer; recorded card loads the stored observation on demand; failures named", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  assert.ok(js.includes("async function renderEvidenceDrawer(drawer, evidence)"), "one drawer renderer for live and recorded cards");
+  const rc = js.slice(js.indexOf("function recordedCard("), js.indexOf("\n}\n", js.indexOf("function recordedCard(")));
+  assert.ok(!rc.includes('$(".act-evidence", card).remove()'), "recorded cards keep the Show evidence button");
+  assert.ok(rc.includes("/api/v1/observations/${encodeURIComponent(it.id)}") && rc.includes("renderEvidenceDrawer(drawer, evidence)"), "loads the observation and renders the shared drawer");
+  assert.ok(rc.includes("could not load the observation:") && rc.includes("stored no evidence ids"), "every failure path names itself");
+  assert.ok(!js.includes("open Show evidence on a live card"), "provenance note no longer points fans elsewhere");
+});
