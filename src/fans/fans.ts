@@ -29,10 +29,16 @@ export const SR = {
   ratings: "sr_ratings",
   reactions: "sr_reactions",
   posts: "sr_posts",
+  favorites: "sr_favorites",
+  picks: "sr_picks",
+  hype: "sr_hype",
   chain_tips: "sr_chain_tips",
 } as const;
+/** Every fan collection. The fact side (rating/engine/llm/planner/ingest/model) never reads any of these — tests/fact_wall.test.ts enforces it. */
+export const SR_COLLECTIONS: readonly string[] = [SR.ratings, SR.reactions, SR.posts, SR.favorites, SR.picks, SR.hype, SR.chain_tips];
+export const HYPE_LABELS = ["", "worried", "uneasy", "steady", "believing", "all in"] as const;
 
-export const FAN_LAYER_VERSION = "0.1.0";
+export const FAN_LAYER_VERSION = "0.2.0";
 export const REACTION_KINDS = ["like", "agree", "disagree"] as const;
 export type ReactionKind = (typeof REACTION_KINDS)[number];
 export const POST_MAX = 280;
@@ -74,7 +80,29 @@ export interface FanPost extends FanWriteBase {
   game_id: string | null;
 }
 
-export type FanWrite = FanRating | FanReaction | FanPost;
+export interface FanFavorite extends FanWriteBase {
+  kind: "favorite";
+  team: string;
+}
+export interface FanPick extends FanWriteBase {
+  kind: "pick";
+  game_id: string;
+  season: number | null;
+  week: number | null;
+  home_team: string;
+  away_team: string;
+  /** The team the fan says wins. Settled later against football_games — never editable after kickoff. */
+  pick: string;
+}
+export interface FanHype extends FanWriteBase {
+  kind: "hype";
+  team: string;
+  season: number;
+  week: number;
+  /** 1 worried … 5 all in. Sentiment, explicitly not a stat. */
+  value: number;
+}
+export type FanWrite = FanRating | FanReaction | FanPost | FanFavorite | FanPick | FanHype;
 
 interface ChainTip {
   fan_id: string;
@@ -196,10 +224,154 @@ export async function post(store: Store, who: FanIdentity, v: { text: string; te
   }, now);
 }
 
+// ---------------------------------------------------------------- favorites
+
+export function validateFavorite(input: unknown): { ok: boolean; value?: { team: string }; errors: string[] } {
+  const o = (input ?? {}) as Record<string, unknown>;
+  const team = typeof o.team === "string" && /^[A-Z]{2,3}$/.test(o.team.toUpperCase()) ? o.team.toUpperCase() : null;
+  return team ? { ok: true, value: { team }, errors: [] } : { ok: false, errors: ["team: 2-3 letter abbreviation"] };
+}
+/** One favorite per fan; re-declaring replaces (same id, new version — the chain keeps both). */
+export async function favorite(store: Store, who: FanIdentity, v: { team: string }, now = new Date().toISOString()): Promise<{ row: NedbRow<FanFavorite>; replaced: boolean }> {
+  const id = deterministicId("srf", { fan: who.fan_id });
+  const existing = await store.get(SR.favorites, id);
+  const row = await commit<FanFavorite>(store, SR.favorites, id, { kind: "favorite", fan_id: who.fan_id, handle: who.handle, team: v.team, target_coll: null, target_id: null, target_hash: null, created_at: now, layer_version: FAN_LAYER_VERSION }, now);
+  return { row, replaced: Boolean(existing) };
+}
+export async function favoriteOf(store: Store, fan_id: string): Promise<string | null> {
+  const row = await store.get<FanFavorite>(SR.favorites, deterministicId("srf", { fan: fan_id }));
+  return row?.data.team ?? null;
+}
+
+// -------------------------------------------------------------------- picks
+
+export interface PickGame { id: string; season: number | null; week: number | null; gameday: string | null; home_team: string | null; away_team: string | null; home_score: number | null; away_score: number | null; winner: string | null }
+
+export function validatePick(input: unknown): { ok: boolean; value?: { game_id: string; pick: string }; errors: string[] } {
+  const errors: string[] = [];
+  const o = (input ?? {}) as Record<string, unknown>;
+  const game_id = typeof o.game_id === "string" && /^\d{4}_\d{2}_[A-Z]{2,3}_[A-Z]{2,3}$/.test(o.game_id) ? o.game_id : null;
+  if (!game_id) errors.push("game_id: e.g. 2025_01_TB_ATL");
+  const pick = typeof o.pick === "string" && /^[A-Z]{2,3}$/.test(o.pick.toUpperCase()) ? o.pick.toUpperCase() : null;
+  if (!pick) errors.push("pick: team abbreviation");
+  return errors.length ? { ok: false, errors } : { ok: true, value: { game_id: game_id!, pick: pick! }, errors: [] };
+}
+/** Pure: why a pick cannot be placed on this game now — null when it can. `today` is a UTC YYYY-MM-DD. */
+export function pickLockReason(g: PickGame, pick: string, today = new Date().toISOString().slice(0, 10)): string | null {
+  if (!g.home_team || !g.away_team) return `game ${g.id} has no teams on record`;
+  if (pick !== g.home_team && pick !== g.away_team) return `pick must be ${g.away_team} or ${g.home_team}`;
+  if (g.home_score !== null || g.away_score !== null) return `game ${g.id} already has a score — picks are locked at kickoff`;
+  if (g.gameday && g.gameday < today) return `game ${g.id} kicked off ${g.gameday} — picks are locked at kickoff`;
+  return null;
+}
+export async function pick(store: Store, who: FanIdentity, v: { game_id: string; pick: string }, now = new Date().toISOString()): Promise<{ row: NedbRow<FanPick>; replaced: boolean; game: PickGame }> {
+  const g = await store.get<PickGame>(COLL.games, v.game_id);
+  if (!g) throw new Error(`game ${v.game_id} not found`);
+  const lock = pickLockReason(g.data, v.pick, now.slice(0, 10));
+  if (lock) throw new Error(lock);
+  const id = deterministicId("srk", { fan: who.fan_id, game: v.game_id });
+  const existing = await store.get(SR.picks, id);
+  const row = await commit<FanPick>(store, SR.picks, id, {
+    kind: "pick", fan_id: who.fan_id, handle: who.handle, game_id: v.game_id, season: g.data.season, week: g.data.week, home_team: g.data.home_team!, away_team: g.data.away_team!, pick: v.pick,
+    target_coll: COLL.games, target_id: v.game_id, target_hash: g._hash, created_at: now, layer_version: FAN_LAYER_VERSION,
+  }, now);
+  return { row, replaced: Boolean(existing), game: g.data };
+}
+export type PickStatus = "won" | "lost" | "push" | "pending";
+/** Pure: the facts settle the pick. Scores absent → pending; tie → push. */
+export function settlePick(p: Pick<FanPick, "pick">, g: PickGame | null | undefined): PickStatus {
+  if (!g || g.home_score === null || g.away_score === null) return "pending";
+  if (g.winner === null) return "push";
+  return g.winner === p.pick ? "won" : "lost";
+}
+export interface PickRecord { wins: number; losses: number; pushes: number; pending: number; pct: number | null }
+export function tallyPicks(statuses: readonly PickStatus[]): PickRecord {
+  const r: PickRecord = { wins: 0, losses: 0, pushes: 0, pending: 0, pct: null };
+  for (const st of statuses) { if (st === "won") r.wins++; else if (st === "lost") r.losses++; else if (st === "push") r.pushes++; else r.pending++; }
+  const settled = r.wins + r.losses;
+  r.pct = settled ? Math.round((r.wins / settled) * 1000) / 10 : null;
+  return r;
+}
+async function gamesById(store: Store, ids: Iterable<string>): Promise<Map<string, PickGame>> {
+  const out = new Map<string, PickGame>();
+  for (const id of new Set(ids)) { const g = await store.get<PickGame>(COLL.games, id); if (g) out.set(id, g.data); }
+  return out;
+}
+export interface SettledPick { id: string; hash: string; game_id: string; season: number | null; week: number | null; home_team: string; away_team: string; pick: string; status: PickStatus; created_at: string; chain_index: number; final: { home_score: number | null; away_score: number | null } | null }
+export async function fanPicks(store: Store, fan_id: string, season?: number): Promise<{ picks: SettledPick[]; record: PickRecord }> {
+  let rows = await store.query<FanPick>(`FROM ${SR.picks} WHERE fan_id = ${nqlStr(fan_id)}`);
+  if (season !== undefined) rows = rows.filter((r) => r.data.season === season);
+  const games = await gamesById(store, rows.map((r) => r.data.game_id));
+  const picks = rows.map((r) => { const g = games.get(r.data.game_id); return { id: r._id, hash: r._hash, game_id: r.data.game_id, season: r.data.season, week: r.data.week, home_team: r.data.home_team, away_team: r.data.away_team, pick: r.data.pick, status: settlePick(r.data, g), created_at: r.data.created_at, chain_index: r.data.chain_index, final: g && g.home_score !== null ? { home_score: g.home_score, away_score: g.away_score } : null }; })
+    .sort((a, b) => (b.week ?? 0) - (a.week ?? 0) || b.created_at.localeCompare(a.created_at));
+  return { picks, record: tallyPicks(picks.map((p) => p.status)) };
+}
+export interface LeaderboardRow { fan_id: string; handle: string; record: PickRecord; picks: number }
+export async function pickLeaderboard(store: Store, season: number, limit = 20): Promise<LeaderboardRow[]> {
+  const rows = (await store.query<FanPick>(`FROM ${SR.picks}`)).filter((r) => r.data.season === season);
+  const games = await gamesById(store, rows.map((r) => r.data.game_id));
+  const byFan = new Map<string, { handle: string; statuses: PickStatus[] }>();
+  for (const r of rows) { const e = byFan.get(r.data.fan_id) ?? { handle: r.data.handle, statuses: [] }; e.handle = r.data.handle; e.statuses.push(settlePick(r.data, games.get(r.data.game_id))); byFan.set(r.data.fan_id, e); }
+  return [...byFan.entries()].map(([fan_id, e]) => ({ fan_id, handle: e.handle, record: tallyPicks(e.statuses), picks: e.statuses.length }))
+    .sort((a, b) => b.record.wins - a.record.wins || (b.record.pct ?? -1) - (a.record.pct ?? -1) || a.record.losses - b.record.losses || a.handle.localeCompare(b.handle))
+    .slice(0, limit);
+}
+/** Crowd split on one game: how many fans took each side. */
+export async function picksForGame(store: Store, game_id: string): Promise<{ game_id: string; total: number; by_team: Record<string, number> }> {
+  const rows = await store.query<FanPick>(`FROM ${SR.picks} WHERE game_id = ${nqlStr(game_id)}`);
+  const by_team: Record<string, number> = {};
+  for (const r of rows) by_team[r.data.pick] = (by_team[r.data.pick] ?? 0) + 1;
+  return { game_id, total: rows.length, by_team };
+}
+
+// --------------------------------------------------------------------- hype
+
+export function validateHype(input: unknown): { ok: boolean; value?: { team: string; season: number; week: number; value: number }; errors: string[] } {
+  const errors: string[] = [];
+  const o = (input ?? {}) as Record<string, unknown>;
+  const team = typeof o.team === "string" && /^[A-Z]{2,3}$/.test(o.team.toUpperCase()) ? o.team.toUpperCase() : null;
+  if (!team) errors.push("team: 2-3 letter abbreviation");
+  const season = typeof o.season === "number" && Number.isInteger(o.season) ? o.season : null;
+  if (season === null) errors.push("season: integer");
+  const week = typeof o.week === "number" && Number.isInteger(o.week) && o.week >= 1 && o.week <= 22 ? o.week : null;
+  if (week === null) errors.push("week: integer 1-22");
+  const value = typeof o.value === "number" && Number.isInteger(o.value) && o.value >= 1 && o.value <= 5 ? o.value : null;
+  if (value === null) errors.push(`value: integer 1-5 (${HYPE_LABELS.slice(1).join(" … ")})`);
+  return errors.length ? { ok: false, errors } : { ok: true, value: { team: team!, season: season!, week: week!, value: value! }, errors: [] };
+}
+export async function hype(store: Store, who: FanIdentity, v: { team: string; season: number; week: number; value: number }, now = new Date().toISOString()): Promise<{ row: NedbRow<FanHype>; replaced: boolean }> {
+  const id = deterministicId("srh", { fan: who.fan_id, team: v.team, season: v.season, week: v.week });
+  const existing = await store.get(SR.hype, id);
+  const row = await commit<FanHype>(store, SR.hype, id, { kind: "hype", fan_id: who.fan_id, handle: who.handle, team: v.team, season: v.season, week: v.week, value: v.value, target_coll: null, target_id: null, target_hash: null, created_at: now, layer_version: FAN_LAYER_VERSION }, now);
+  return { row, replaced: Boolean(existing) };
+}
+export interface HypeAggregate { team: string; season: number; week: number; n: number; mean: number | null; label: string | null; dist: number[] }
+export function aggregateHype(values: readonly number[], team: string, season: number, week: number): HypeAggregate {
+  const dist = [0, 0, 0, 0, 0];
+  for (const v of values) if (v >= 1 && v <= 5) dist[v - 1]++;
+  const n = values.length;
+  const mean = n ? Math.round((values.reduce((a, b) => a + b, 0) / n) * 10) / 10 : null;
+  return { team, season, week, n, mean, label: mean === null ? null : HYPE_LABELS[Math.min(5, Math.max(1, Math.round(mean)))], dist };
+}
+export async function hypeFor(store: Store, team: string, season: number, week: number): Promise<HypeAggregate & { mine?: number | null }> {
+  const rows = await store.query<FanHype>(`FROM ${SR.hype} WHERE team = ${nqlStr(team)}`);
+  return aggregateHype(rows.filter((r) => r.data.season === season && r.data.week === week).map((r) => r.data.value), team, season, week);
+}
+
+/** Reaction counts for a set of targets — used by the server routes to decorate record/feed items. */
+export async function reactionCounts(store: Store, target_coll: string, ids: readonly string[]): Promise<Map<string, Record<ReactionKind, number>>> {
+  const counts = new Map<string, Record<ReactionKind, number>>();
+  if (!ids.length) return counts;
+  const want = new Set(ids);
+  const rx = await store.query<FanReaction>(`FROM ${SR.reactions} WHERE target_coll = ${nqlStr(target_coll)}`);
+  for (const x of rx) { if (!want.has(x.data.target_id!)) continue; const c = counts.get(x.data.target_id!) ?? { like: 0, agree: 0, disagree: 0 }; c[x.data.reaction]++; counts.set(x.data.target_id!, c); }
+  return counts;
+}
+
 // ------------------------------------------------------------------- reads
 
 export interface FeedItem {
-  kind: "post" | "rating" | "reaction";
+  kind: "post" | "rating" | "reaction" | "pick";
   id: string;
   hash: string;
   seq: number;
@@ -218,6 +390,10 @@ export interface FeedItem {
   target_coll?: string | null;
   target_id?: string | null;
   reactions?: Record<ReactionKind, number>;
+  pick?: string;
+  home_team?: string;
+  away_team?: string;
+  week?: number | null;
 }
 
 export async function feed(store: Store, opts: { team?: string; limit?: number; include?: Array<FeedItem["kind"]> } = {}): Promise<{ items: FeedItem[]; seq: number; head: string }> {
@@ -240,6 +416,11 @@ export async function feed(store: Store, opts: { team?: string; limit?: number; 
     seq = Math.max(seq, r.seq); head = r.head || head;
     for (const x of r.rows) items.push({ kind: "reaction", id: x._id, hash: x._hash, seq: x._seq, fan_id: x.data.fan_id, handle: x.data.handle, created_at: x.data.created_at, chain_index: x.data.chain_index, prev: x.data.prev, reaction: x.data.reaction, target_coll: x.data.target_coll, target_id: x.data.target_id });
   }
+  if (include.has("pick")) {
+    const r = await store.queryAt<FanPick>(`FROM ${SR.picks}`);
+    seq = Math.max(seq, r.seq); head = r.head || head;
+    for (const x of r.rows) items.push({ kind: "pick", id: x._id, hash: x._hash, seq: x._seq, fan_id: x.data.fan_id, handle: x.data.handle, created_at: x.data.created_at, chain_index: x.data.chain_index, prev: x.data.prev, team: x.data.pick, game_id: x.data.game_id, pick: x.data.pick, home_team: x.data.home_team, away_team: x.data.away_team, week: x.data.week });
+  }
   // Reaction counts on posts.
   const posts = items.filter((i) => i.kind === "post");
   if (posts.length) {
@@ -252,7 +433,7 @@ export async function feed(store: Store, opts: { team?: string; limit?: number; 
     }
     for (const p of posts) p.reactions = counts.get(p.id) ?? { like: 0, agree: 0, disagree: 0 };
   }
-  const filtered = opts.team ? items.filter((i) => !i.team || i.team === opts.team) : items;
+  const filtered = opts.team ? items.filter((i) => !i.team || i.team === opts.team || (i.kind === "pick" && (i.home_team === opts.team || i.away_team === opts.team))) : items;
   filtered.sort((a, b) => b.seq - a.seq);
   return { items: filtered.slice(0, opts.limit ?? 50), seq, head };
 }
@@ -289,7 +470,7 @@ export async function fanChain(store: Store, fan_id: string, limit = 200): Promi
   if (!tip) return { handle: null, length: 0, verified: true, links: [] };
   // All of the fan's writes in one pass per collection, then follow prev.
   const byHash = new Map<string, NedbRow<FanWrite>>();
-  for (const coll of [SR.posts, SR.ratings, SR.reactions]) {
+  for (const coll of [SR.posts, SR.ratings, SR.reactions, SR.favorites, SR.picks, SR.hype]) {
     for (const r of await store.query<FanWrite>(`FROM ${coll} WHERE fan_id = ${nqlStr(fan_id)}`)) byHash.set(r._hash, r);
   }
   const links: ChainLink[] = [];

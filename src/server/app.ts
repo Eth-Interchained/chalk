@@ -54,7 +54,7 @@ import { evaluateBadges, BADGE_DEFINITIONS } from "../rating/badges.ts";
 import { opponentReport, summarizeOpponentReport } from "../engine/opponent.ts";
 import { analyzeDeviation } from "../engine/deviation.ts";
 import { identiconSvg, RateLimiter, verifyIdentity } from "../fans/identity.ts";
-import { consensus, fanChain, feed, post, rate, react, validatePost, validateRate, validateReaction, SR } from "../fans/fans.ts";
+import { consensus, fanChain, feed, post, rate, react, validatePost, validateRate, validateReaction, SR, validateFavorite, favorite, favoriteOf, validatePick, pick, fanPicks, pickLeaderboard, picksForGame, validateHype, hype, hypeFor, reactionCounts, HYPE_LABELS } from "../fans/fans.ts";
 
 // Fan-layer anti-spam: 20 writes burst per handle, refilling 1 per 10s; 60 per address, 1 per 5s.
 const fanLimiter = new RateLimiter(20, 1 / 10_000);
@@ -460,12 +460,62 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
         const r = await post(store, who.identity!, v.value!, now);
         return json(res, 201, { ok: true, id: r._id, _hash: r._hash, chain_index: r.data.chain_index });
       }
+      // Fan knobs that are NOT facts (v0.11.0): allegiance, picks (settled by the facts later), sentiment.
+      if (p === "/api/v1/fans/favorites") {
+        const v = validateFavorite(body);
+        if (!v.ok) throw new HttpError(400, "invalid favorite", v.errors);
+        const r = await favorite(store, who.identity!, v.value!, now);
+        return json(res, 201, { ok: true, replaced: r.replaced, team: v.value!.team, id: r.row._id, _hash: r.row._hash, chain_index: r.row.data.chain_index });
+      }
+      if (p === "/api/v1/fans/picks") {
+        const v = validatePick(body);
+        if (!v.ok) throw new HttpError(400, "invalid pick", v.errors);
+        let r;
+        try { r = await pick(store, who.identity!, v.value!, now); } catch (e) { throw new HttpError(/not found/.test((e as Error).message) ? 404 : 409, (e as Error).message); }
+        const [mine, crowd] = await Promise.all([fanPicks(store, who.identity!.fan_id, r.game.season ?? undefined), picksForGame(store, v.value!.game_id)]);
+        return json(res, 201, { ok: true, replaced: r.replaced, id: r.row._id, _hash: r.row._hash, chain_index: r.row.data.chain_index, pick: r.row.data.pick, record: mine.record, crowd });
+      }
+      if (p === "/api/v1/fans/hype") {
+        const v = validateHype(body);
+        if (!v.ok) throw new HttpError(400, "invalid hype", v.errors);
+        const r = await hype(store, who.identity!, v.value!, now);
+        const agg = await hypeFor(store, v.value!.team, v.value!.season, v.value!.week);
+        return json(res, 201, { ok: true, replaced: r.replaced, id: r.row._id, _hash: r.row._hash, chain_index: r.row.data.chain_index, mine: v.value!.value, ...agg });
+      }
       throw new HttpError(404, `no route ${m} ${p}`);
     }
     if (p === "/api/v1/feed" && m === "GET") {
-      const include = (q.get("include") ?? "post,rating").split(",").filter((k): k is "post" | "rating" | "reaction" => ["post", "rating", "reaction"].includes(k));
+      const include = (q.get("include") ?? "post,pick,rating").split(",").filter((k): k is "post" | "rating" | "reaction" | "pick" => ["post", "rating", "reaction", "pick"].includes(k));
       const f = await feed(store, { team: q.get("team")?.toUpperCase() || undefined, limit: Math.min(200, Number(q.get("limit") ?? 50)), include });
       return json(res, 200, { count: f.items.length, seq: f.seq, head: f.head, items: f.items.map((i) => ({ ...i, identicon: identiconSvg(i.fan_id, 32) })) });
+    }
+    if (p === "/api/v1/fans/favorite" && m === "GET") {
+      const fan_id = need(q, "fan_id");
+      if (!/^[0-9a-f]{64}$/.test(fan_id)) throw new HttpError(400, "fan_id: 64 hex chars");
+      return json(res, 200, { fan_id, team: await favoriteOf(store, fan_id) });
+    }
+    if (p === "/api/v1/fans/picks" && m === "GET") {
+      const fan_id = need(q, "fan_id");
+      if (!/^[0-9a-f]{64}$/.test(fan_id)) throw new HttpError(400, "fan_id: 64 hex chars");
+      const season = q.get("season") ? Number(q.get("season")) : undefined;
+      return json(res, 200, { fan_id, season: season ?? null, ...(await fanPicks(store, fan_id, season)) });
+    }
+    if (p === "/api/v1/fans/picks/leaderboard" && m === "GET") {
+      const season = Number(q.get("season") ?? defaultSeason);
+      const rows = await pickLeaderboard(store, season, Math.min(100, Number(q.get("limit") ?? 20)));
+      return json(res, 200, { season, count: rows.length, rows: rows.map((r) => ({ ...r, identicon: identiconSvg(r.fan_id, 24) })) });
+    }
+    if (p === "/api/v1/fans/picks/game" && m === "GET") {
+      const game_id = need(q, "game_id");
+      if (!/^\d{4}_\d{2}_[A-Z]{2,3}_[A-Z]{2,3}$/.test(game_id)) throw new HttpError(400, "game_id: e.g. 2025_01_TB_ATL");
+      return json(res, 200, await picksForGame(store, game_id));
+    }
+    if (p === "/api/v1/fans/hype" && m === "GET") {
+      const team = need(q, "team").toUpperCase();
+      const season = Number(q.get("season") ?? defaultSeason);
+      const week = Number(need(q, "week"));
+      if (!Number.isInteger(week) || week < 1 || week > 22) throw new HttpError(400, "week: integer 1-22");
+      return json(res, 200, { ...(await hypeFor(store, team, season, week)), labels: HYPE_LABELS.slice(1) });
     }
     if (p === "/api/v1/fans/consensus" && m === "GET") {
       const team = need(q, "team").toUpperCase();
@@ -584,6 +634,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const beforeSeq = q.get("before") ? Number(q.get("before")) : undefined;
       if (beforeSeq !== undefined && !Number.isFinite(beforeSeq)) throw new HttpError(400, "before: numeric seq cursor");
       const r = await listRecord(store, { team, season, limit: Math.min(100, Number(q.get("limit") ?? 30)), beforeSeq });
+      { const rxc = await reactionCounts(store, COLL.observations, r.items.map((i) => i.id)); for (const it of r.items) it.reactions = rxc.get(it.id) ?? { like: 0, agree: 0, disagree: 0 }; }
       return json(res, 200, { count: r.items.length, total: r.total, next_before: r.next_before, seq: r.seq, head: r.head, items: r.items });
     }
     if ((mm = p.match(/^\/api\/v1\/observations\/([^/]+)$/)) && m === "GET") {
@@ -865,6 +916,9 @@ function labelFor(r: NedbRow): string {
     case COLL.comparisons: return `comparison`;
     case "sr_posts": return `take by ${d.handle}`;
     case "sr_ratings": return `${d.handle} rated ${d.team} ${d.subject} ${d.score}`;
+    case "sr_picks": return `${d.handle} picked ${d.pick} (${d.game_id})`;
+    case "sr_favorites": return `${d.handle} favorite ${d.team}`;
+    case "sr_hype": return `${d.handle} hype ${d.team} wk${d.week} = ${d.value}`;
     case "sr_reactions": return `${d.handle} ${d.reaction}`;
     case "sr_chain_tips": return `chain tip ${d.handle}`;
     default: return r._coll;

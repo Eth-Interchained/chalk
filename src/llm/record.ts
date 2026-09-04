@@ -24,7 +24,6 @@ import type { Store } from "../store/nedb.ts";
 import type { EvidencePackage, ObservationRecord } from "./explain.ts";
 import type { QueryPlan } from "./planner.ts";
 import { PROMPT_VERSION } from "./prompts.ts";
-import { SR, type FanReaction, type ReactionKind } from "../fans/fans.ts";
 import { hiddenSet } from "../server/moderation.ts";
 
 export const RECORD_VERSION = "1";
@@ -68,7 +67,8 @@ export interface RecordItem {
   evidence_count: number;
   evidence_key: string | null;
   register: "fan" | "coach";
-  reactions: Record<ReactionKind, number>;
+  /** Filled in by the server route from the fan layer — the record itself never reads fan data (fact wall). */
+  reactions?: Record<"like" | "agree" | "disagree", number>;
 }
 
 /** A team's record, newest first, with fan reaction tallies joined. */
@@ -93,15 +93,6 @@ export async function listRecord(store: Store, opts: { team?: string; season?: n
   const hasMore = rows.length > limit;
   rows = rows.slice(0, limit);
   const next_before = hasMore && rows.length ? rows[rows.length - 1]._seq : null;
-  const counts = new Map<string, Record<ReactionKind, number>>();
-  if (rows.length) {
-    const rx = await store.query<FanReaction>(`FROM ${SR.reactions} WHERE target_coll = ${nqlStr(COLL.observations)}`);
-    for (const x of rx) {
-      const c = counts.get(x.data.target_id!) ?? { like: 0, agree: 0, disagree: 0 };
-      c[x.data.reaction]++;
-      counts.set(x.data.target_id!, c);
-    }
-  }
   return {
     items: rows.map((x) => ({
       id: x._id, hash: x._hash, seq: x._seq,
@@ -110,7 +101,6 @@ export async function listRecord(store: Store, opts: { team?: string; season?: n
       statements: x.data.statements ?? [],
       answer: x.data.answer, model: x.data.model, created_at: x.data.created_at, latency_ms: x.data.latency_ms,
       evidence_count: x.data.evidence_count, evidence_key: x.data.evidence_key ?? null, register: x.data.register ?? "fan",
-      reactions: counts.get(x._id) ?? { like: 0, agree: 0, disagree: 0 },
     })),
     seq: r.seq, head: r.head, total, next_before,
   };
