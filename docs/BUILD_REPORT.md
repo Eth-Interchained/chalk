@@ -4,6 +4,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.6.4 · client: subject-rating answers rendered; a render bug can no longer kill the ask stream
+
+### SHIPPED
+- **Bug (Mark, live on the VPS):** "How is the Tampa Bay offense rated overall?" → three correct statements, then `Cannot read properties of undefined (reading 'definition')` and no model prose. Server package verified correct (kind `rating`, `summary.rating` + `summary.profile` 1065 snaps/17 games, no `analysis`). Root cause in `web/app.js`: `renderCoach` treated every `rating` package as third-down shaped and read `summary.analysis.definition`; the throw inside the SSE `handle()` propagated out of the read loop and the outer catch abandoned the stream — so the coach-view bug also swallowed the interpretation.
+- `renderCoach`: third-down shape when `analysis` exists; otherwise the season profile (snaps, games, EPA/play, success, explosive, turnover, third-down, red-zone TD, PPG) + formula notes; components table unchanged (shape already matched); league top-5 and bottom-3 tolerate `attempts`/`sample_size`/`snaps`.
+- `handle("evidence")`: `renderCoach` wrapped — a failure logs to console and renders a named `.err` in the coach box; statements, tokens and observation continue.
+- Badge: `0 plays` → `1065 snaps · aggregate` when there is no play list; Evidence drawer explains the aggregate instead of "loading 0 of 0 plays…".
+
+### VERIFIED ON THE REAL SYSTEM
+- Local serve, POST /api/v1/ask for the same question: identical three statements to Mark's screen; `summary` keys `rating, formula_notes, league_top5, league_bottom3, profile`. Client change syntax-checked (`node --check`); no headless browser in the sandbox — Mark's reload is the render test.
+
+---
+
 ## 2026-09-04 — v0.6.3 · no silent short games: source contradictions error, ingest floor, season audit
 
 ### SHIPPED
