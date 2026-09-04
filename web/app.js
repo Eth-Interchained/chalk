@@ -64,6 +64,7 @@ function syncUrl() { const u = new URL(location.href); u.searchParams.set("team"
 function renderSuggest() { const s = $("#suggest"); s.innerHTML = ""; for (const q of state.meta.suggested_questions) s.append(el(`<button class="chip" data-ask="${esc(q)}">${esc(q.replaceAll("Tampa", teamName(state.team)))}</button>`)); }
 
 // ------------------------------------------------------------------ home
+let homeRefreshAttempts = 0;
 async function loadHome(defId) {
   applyTeamTheme(state.team);
   $("#h-abbr").textContent = state.team;
@@ -71,9 +72,15 @@ async function loadHome(defId) {
   $("#rc-score").textContent = "…";
   ["#h-badges", "#form-body", "#last-body", "#next-body", "#weak-body", "#rc-components", "#trend-headline", "#ratings", "#scout-body"].forEach((s) => { $(s).innerHTML = ""; });
   $("#trend-svg").innerHTML = "";
+  // If the server has no persisted snapshot for this team/season it computes
+  // inline (~30s from 48k plays). Say so instead of showing three dots.
+  const slow = setTimeout(() => { for (const sel of ["#scout-body", "#trend-headline", "#weak-body"]) $(sel).innerHTML = `<div class="muted">Computing from the full season's plays — first look at this team since the data changed (~30s). Next time is instant.</div>`; }, 1500);
   try {
     const h = await api(`/api/v1/teams/${state.team}/home?season=${state.season}${defId ? `&definition=${encodeURIComponent(defId)}` : ""}`);
+    clearTimeout(slow);
     state.home = h; state.rating = h.rating ? { summary: h.rating, snapshot: { definition_id: h.rating.definition_id, id: h.rating_snapshot_id } } : null;
+    // Served from a snapshot built before the latest data change: show it, then re-pull once the background rebuild lands.
+    if (h.served?.refreshing) { $("#rc-rank").insertAdjacentHTML("beforeend", ' <span class="badge amber" id="refreshing" title="data changed since this was computed; refreshing">refreshing…</span>'); homeRefreshAttempts = (homeRefreshAttempts ?? 0) + 1; if (homeRefreshAttempts <= 8) setTimeout(() => { if (state.team === h.team && state.season === h.season) loadHome(defId); }, 4000); } else homeRefreshAttempts = 0;
     renderRating(h);
     renderTrend(h.trend);
     renderForm(h.form);
@@ -85,7 +92,7 @@ async function loadHome(defId) {
     renderScout(h.scout, h.next_game);
     renderTrendChips(h.ratings);
     loadGames();
-  } catch (e) {
+  } catch (e) { clearTimeout(slow);
     $("#rc-score").textContent = "–";
     $("#rc-line1").innerHTML = `<span class="err">${esc(e.message)}</span>`;
     $("#rc-rank").textContent = e.status === 404 ? `No ${state.season} data — run: chalk ingest --season ${state.season}` : "";

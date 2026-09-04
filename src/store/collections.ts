@@ -38,6 +38,8 @@ export const COLL = {
 
   // Observability.
   ingest_events: "football_ingest_events",
+  /** Persisted Home payloads: the store is the cache, so a restart costs milliseconds, not a 30s recompute. */
+  home_snapshots: "football_home_snapshots",
   source_changes: "football_source_changes",
   query_events: "football_query_events",
   model_events: "football_model_events",
