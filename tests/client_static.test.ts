@@ -1,6 +1,12 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, statSync } from "node:fs";
+import * as fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,4 +61,16 @@ test("client: every team in TEAMS has a hero image under web/hero, and the hero 
   assert.match(html, /id="team-hero"/);
   assert.match(src, /function setHero\(/);
   assert.match(src, /setHero\(state\.team\)/);
+});
+
+test("every source, page, style and deploy file carries the SPDX BUSL-1.1 header and the Interchained LLC copyright", () => {
+  const { readdirSync } = fs;
+  const root = path.join(here, "..");
+  const skip = new Set(["node_modules", ".git", "chalk-data", "hero", "logos"]);
+  const files: string[] = [];
+  const walk = (d: string) => { for (const e of readdirSync(d, { withFileTypes: true })) { if (skip.has(e.name)) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.(ts|js|mjs|css|html|md|conf|service|example)$/.test(e.name)) files.push(p); } };
+  walk(root);
+  assert.ok(files.length > 40, `walked ${files.length} files`);
+  const missing = files.filter((f) => { const head = readFileSync(f, "utf8").slice(0, 600); return !/SPDX-License-Identifier: BUSL-1\.1/.test(head) || !/Interchained LLC/.test(head); });
+  assert.deepEqual(missing.map((f) => path.relative(root, f)), [], "files without the header");
 });

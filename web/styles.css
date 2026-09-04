@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 :root {
   --bg: #07090d;
   --bg-2: #0f141b;
@@ -359,3 +364,6 @@ main.view-feed .team-hero { display: none; }
   .views { grid-column: 1 / -1; justify-content: flex-start; }
   .team-hero { margin-top: -14px; }
 }
+
+.site-foot .legal { color: var(--fg-2); }
+.site-foot .legal b { color: var(--fg); letter-spacing: .04em; }

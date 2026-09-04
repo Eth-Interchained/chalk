@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * Open API — CHALK serves its own OpenAPI 3.1 document at /api/v1/openapi.json.
  * Every analysis, rating, play and observation is addressable by id; every
@@ -14,7 +19,8 @@ export function openapiDocument(baseUrl: string) {
       version: "0.6.0",
       description:
         "Deterministic football analytics over an NEDB provenance store. The database knows. Deterministic code calculates. The model interprets. Provenance proves. Every analysis, rating, play and model observation is addressable and traceable to raw source records.",
-      license: { name: "BUSL-1.1" },
+      license: { name: "BUSL-1.1 — Business Source License 1.1 (Licensor: Interchained LLC)", url: "https://github.com/Eth-Interchained/chalk/blob/main/LICENSE" },
+      contact: { name: "Interchained LLC", url: "https://sports-rater.com" },
     },
     servers: [{ url: baseUrl }],
     tags: [

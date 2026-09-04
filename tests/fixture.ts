@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * Frozen real-game fixture: 2025_18_CAR_TB (Carolina at Tampa Bay, 2026-01-03,
  * TB 16 – CAR 14), 159 plays exactly as api.nfldata.org returned them on

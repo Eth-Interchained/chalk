@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: BUSL-1.1 · Copyright (c) 2026 Interchained LLC. All rights reserved. -->
 # Deploying Sports-Rater (CHALK) on the VPS
 
 Target: `sports-rater.com` behind Cloudflare (Flexible today), nginx on the box, CHALK on `127.0.0.1:4040` with **NEDB embedded in-process** (no daemon), one systemd unit under a dedicated `chalk` user. Node ≥ 24 required (TypeScript runs natively — no build step).

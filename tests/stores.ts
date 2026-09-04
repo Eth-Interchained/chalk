@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * Integration tests run against BOTH stores. CHALK_TEST_STORE=embedded uses the
  * in-process napi engine (in-memory); anything else spawns the bundled

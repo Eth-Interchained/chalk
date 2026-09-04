@@ -1,3 +1,8 @@
+/*
+ * SPDX-License-Identifier: BUSL-1.1
+ * Copyright (c) 2026 Interchained LLC. All rights reserved.
+ * CHALK / Sports-Rater — https://sports-rater.com — Licensor: Interchained LLC
+ */
 /**
  * Trend engine (V3 §7, §25) — rating and metric movement through the season,
  * computed AS KNOWN THEN: the week-N point uses only plays from weeks <= N,
