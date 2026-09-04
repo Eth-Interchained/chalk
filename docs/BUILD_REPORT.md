@@ -4,9 +4,9 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
-## 2026-09-04 — license: BUSL-1.1 → GPL-3.0-only
+## 2026-09-04 — license: CHALK stays BUSL-1.1
 
-- **Mark:** "let's make CHALK BUSL → GPLv3." Interchained LLC is the sole copyright holder, so this is a straight relicense: `LICENSE` is now the canonical GPLv3 text (sha256 3972dc97…6986, fetched from gnu.org), `package.json`/`package-lock.json` carry SPDX `GPL-3.0-only`, README and the OpenAPI document say the same. CHALK now sits on the same license as NEDB Studio. No code change.
+- Mark: CHALK stays under the Business Source License 1.1 (Interchained LLC, licensor). PR #30 relicensed to GPL-3.0-only on a misread of the ask; PR #31 reverts it in full — `LICENSE`, `package.json`, `package-lock.json`, README footer and OpenAPI `info.license` are BUSL-1.1 again. No code change.
 
 ---
 
