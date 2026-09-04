@@ -74,3 +74,17 @@ test("every source, page, style and deploy file carries the SPDX BUSL-1.1 header
   const missing = files.filter((f) => { const head = readFileSync(f, "utf8").slice(0, 600); return !/SPDX-License-Identifier: BUSL-1\.1/.test(head) || !/Interchained LLC/.test(head); });
   assert.deepEqual(missing.map((f) => path.relative(root, f)), [], "files without the header");
 });
+
+test("brand: favicon/app-icon set, manifest and header mark are present and consistent", () => {
+  const root = path.join(here, "..");
+  for (const f of ["web/icons/mark.svg", "web/icons/favicon.svg", "web/icons/mark-mono.svg", "web/favicon.ico", "web/site.webmanifest", "web/icons/icon-16.png", "web/icons/icon-32.png", "web/icons/icon-180.png", "web/icons/icon-192.png", "web/icons/icon-512.png", "web/icons/maskable-512.png"]) assert.ok(existsSync(path.join(root, f)), `missing ${f}`);
+  const manifest = JSON.parse(readFileSync(path.join(root, "web/site.webmanifest"), "utf8"));
+  assert.equal(manifest.short_name, "Sports-Rater");
+  for (const ic of manifest.icons) assert.ok(existsSync(path.join(root, "web", ic.src)), `manifest icon ${ic.src}`);
+  const svg = readFileSync(path.join(root, "web/icons/mark.svg"), "utf8");
+  assert.match(svg, /Interchained LLC/); assert.match(svg, /<circle[^>]*fill="#ff4b3e"/i);
+  for (const page of ["web/index.html", "web/admin.html"]) {
+    const html = readFileSync(path.join(root, page), "utf8");
+    assert.match(html, /rel="icon" href="\/icons\/favicon.svg"/); assert.match(html, /rel="apple-touch-icon"/); assert.match(html, /rel="manifest" href="\/site.webmanifest"/); assert.match(html, /class="brand-mark" src="\/icons\/mark.svg"/);
+  }
+});

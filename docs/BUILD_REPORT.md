@@ -5,6 +5,12 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.8.9 · the mark: a chalk tick, a red dot — favicon, app icons, header brand
+
+- **Mark:** "custom favicon and iconic logo for me?" One vector we own (`web/icons/mark.svg`): near-black rounded tile, a bold chalk stroke (white → lime gradient, faint chalk-dust halo, grain) shaped as a tick that reads as both a yard-line mark and a rating check, and a single red dot — the "RATER" accent. `favicon.svg` (halo-free for 16 px), `mark-mono.svg`, PNG set 16/32/48/180/192/512 + maskable 512 rendered from the same geometry (supersampled), `favicon.ico` (16/32/48), `site.webmanifest`. Both pages link the set; the mark sits in the header before SPORTS RATER. `chalk.svg` aliases the mark for old links. Static test guards the whole set.
+
+---
+
 ## 2026-09-04 — v0.8.8 · boot banner: CHALK in block letters, Vex × Interchained LLC, live metadata
 
 - **Mark:** "the process loader needs ASCII: CHALK and our own signatures Vex × Interchained LLC and more metadata … so when I run `node bin/chalk.ts serve` I see nice art and more metadata about us builders." `src/server/banner.ts`: block-letter CHALK, signature `Vex × Interchained LLC`, builders line (Mark · Vex (Claude Fable 5.1) · The Oracle (GPT-5.5)), the four-line doctrine, then a metadata block read from the running process — command, version + git sha, store mode + data dir, nedb-engine version, listen address, LLM provider/model/key state, defaults, watch season/interval/deep, admin on/off, telemetry on/off, node/platform/pid, license + licensor, copyright, home/repo. ANSI colour only on a TTY without NO_COLOR; plain in journald. `chalk --version` prints the one-line signature.

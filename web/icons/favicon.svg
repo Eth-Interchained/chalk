@@ -13,9 +13,9 @@
   </defs>
   <rect x="16" y="16" width="480" height="480" rx="112" fill="#0f141b" stroke="#222b37" stroke-width="8"/>
   <!-- chalk tick: short down-stroke then long up-stroke, rounded ends, slight overshoot like a real chalk mark -->
-  <path d="M120 276 L214 372 L400 150" fill="none" stroke="url(#chalk)" stroke-width="58" stroke-linecap="round" stroke-linejoin="round" filter="url(#grain)"/>
+  <path d="M120 276 L214 372 L400 150" fill="none" stroke="url(#chalk)" stroke-width="58" stroke-linecap="round" stroke-linejoin="round" />
   <!-- chalk dust: faint echo of the stroke -->
-  <path d="M120 276 L214 372 L400 150" fill="none" stroke="#f4f6f8" stroke-opacity="0.14" stroke-width="86" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M120 276 L214 372 L400 150" fill="none" stroke="#f4f6f8" stroke-opacity="0" stroke-width="0" stroke-linecap="round" stroke-linejoin="round"/>
   <!-- the rating: one red dot -->
   <circle cx="404" cy="384" r="36" fill="#ff4b3e"/>
 </svg>
