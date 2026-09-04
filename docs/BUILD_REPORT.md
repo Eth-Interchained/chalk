@@ -5,6 +5,14 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.5 · the cache held; the client kept saying it hadn't
+
+- **Mark:** "it keeps doing that every 30s? there is no new data why is it recomputing … why cant the cache hold?"
+- **Verified on the live system first:** `/api/v1/teams/TB/home` served `fresh: true` from the snapshot three times in a row, 70–330 ms, stamp `w238407:p238066:v0.12.4` unchanged. The server was not recomputing. TB rebuilt exactly once after the v0.12.4 deploy (`built_ms: 32695`), as v0.12.2 intends — and today had seven deploys.
+- **Root cause (client, mine):** after a stale-flagged serve the retry loop called `loadHome()` every 4 s, and `loadHome` wipes every tile and re-arms the 1.5 s slow message on each call — so a page that already had data blanked and re-announced "Computing … first look since the data changed" up to eight times across the one ~30 s rebuild. And that message asserted a cause ("the data changed") it had never observed; it fires on latency.
+- **Fix:** `loadHome(defId, { quiet: true })` for refresh retries — no wipe, no slow message, payload swapped in when it lands, dropped if the fan has moved to another team, a failed quiet refetch keeps the page as is and logs why. The slow message now names both causes it cannot tell apart (engine busy, or first look on this version) and nothing else. The `refreshing…` badge carries the two stamps in its tooltip. Retries: 15 × 4 s, then a named console warning.
+- Tests: static guard. 105/105 both stores. Not browser-verified (Mark's rule).
+
 ## 2026-09-04 — v0.12.4 · the default OG image
 
 - **Mark:** "a brilliant OG image branded with our iconic logo please with inviting phrases about our educational gamified intelligence app."
