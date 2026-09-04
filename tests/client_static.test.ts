@@ -160,3 +160,16 @@ test("the cut (v0.11.0): fans get knobs that are not facts — no Rate-it slider
   assert.ok(js.includes("/api/v1/fans/picks") && js.includes("/api/v1/fans/hype") && js.includes("/api/v1/fans/favorites"));
   assert.ok(js.includes("it never touches a CHALK number"), "the wall is stated where the knob is");
 });
+
+test("headline sharecard (v0.12.0): share button, canvas draw, copy/download/caption/native, social intents, /s/TEAM landing", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
+  assert.ok(html.includes('id="share"'));
+  for (const fn of ["drawShareCard", "openShareCard", "headlineNumbers"]) assert.ok(js.includes(`function ${fn}(`), fn);
+  assert.ok(js.includes("/api/v1/share/${state.team}"), "caption comes from the server copy — one source with the OG tags");
+  for (const host of ["twitter.com/intent/tweet", "facebook.com/sharer", "threads.net/intent/post", "reddit.com/submit", "linkedin.com/sharing"]) assert.ok(js.includes(host), host);
+  assert.ok(js.includes('new ClipboardItem({ "image/png"') && js.includes("navigator.share(") && js.includes("a.download = f.name"));
+  assert.ok(js.includes('location.pathname.match(/^\\/s\\/([A-Za-z]{2,3})$/)'), "SPA reads the team from a /s/TEAM landing");
+  assert.ok(server.includes("injectOg(html, shareCopy(home") && server.includes('/api\\/v1\\/share\\/([A-Za-z]{2,3})$'), "server: landing with OG tags + share copy route");
+});

@@ -12,6 +12,7 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { auditSeason } from "../ingest/audit.ts";
+import { shareCopy, injectOg, publicBase } from "./share.ts";
 import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapshot, type HomePayload, dataStampFrom, type IngestEventLike, type PulseEventLike } from "./home.ts";
 import type { RatingDefinition } from "../rating/definitions.ts";
 import { logoConfig } from "./logos.ts";
@@ -179,6 +180,23 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       if (url.pathname.startsWith("/api/")) {
         await api(req, res, url);
       } else {
+        // /s/TEAM — share landing: the app shell with OG/Twitter tags for this team's headline, so a pasted
+        // link previews the hero and the number. The SPA reads the team from the path (v0.12.0).
+        const sm = url.pathname.match(/^\/s\/([A-Za-z]{2,3})$/);
+        if (sm && req.method === "GET") {
+          const team = sm[1].toUpperCase();
+          const season = Number(url.searchParams.get("season") ?? defaultSeason);
+          let html = await readFile(path.join(webDir, "index.html"), "utf8");
+          try {
+            const home = await serveHome(team, season, THIRD_DOWN_DEFAULT_V1, false);
+            html = injectOg(html, shareCopy(home, url.searchParams.get("headline") ?? "third_down", publicBase(process.env, req.headers)));
+          } catch (e) {
+            log(`share landing ${team} ${season}: OG tags skipped — ${(e as Error).message}`);
+          }
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" });
+          res.end(html);
+          return;
+        }
         await serveStatic(res, url.pathname);
       }
     } catch (e) {
@@ -417,6 +435,13 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const { rows, ctx, seq, head } = await loadTeamPlaysWithContext(store, f);
       const r = opponentReport(team, rows, f, ctx, { seq, head });
       return json(res, 200, { summary: summarizeOpponentReport(r), statements: r.statements, id: r.id, evidence_count: r.evidence.length, context_rows: ctx.size });
+    }
+    // Sharecard copy: title / caption / canonical URL / preview image for a team's headline (v0.12.0).
+    if ((mm = p.match(/^\/api\/v1\/share\/([A-Za-z]{2,3})$/)) && m === "GET") {
+      const team = mm[1].toUpperCase();
+      const season = Number(q.get("season") ?? defaultSeason);
+      const home = await serveHome(team, season, THIRD_DOWN_DEFAULT_V1, false);
+      return json(res, 200, { ...shareCopy(home, q.get("headline") ?? "third_down", publicBase(process.env, req.headers)), served: home.served });
     }
     if ((mm = p.match(/^\/api\/v1\/teams\/([A-Za-z]{2,3})\/home$/)) && m === "GET") {
       const team = mm[1].toUpperCase();

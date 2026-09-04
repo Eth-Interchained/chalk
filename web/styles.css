@@ -435,3 +435,12 @@ body:not(.mode-coach) #rate-differently { display: none !important; }
 .lb .row.me { outline: 1px solid var(--accent); outline-offset: -1px; }
 .lb .lbh { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: .12em; font-size: 11px; color: var(--fg-3); }
 .fi .t .pk { font-family: var(--display); font-weight: 800; color: var(--accent); }
+
+/* Headline sharecard (v0.12.0): a 1200×630 canvas drawn from the hero, the logo and the numbers. */
+.card.share canvas { width: 100%; height: auto; display: block; border-radius: 12px; border: 1px solid var(--line); background: var(--bg-3); }
+.card.share .acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+.card.share .soc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.card.share .soc a { text-decoration: none; }
+.card.share .cap { margin-top: 10px; background: var(--bg-3); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--fg-2); }
+.card.share .out { font-family: var(--mono); font-size: 11px; color: var(--fg-3); min-height: 14px; }
+.chip.share { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }

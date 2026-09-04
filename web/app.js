@@ -77,7 +77,8 @@ async function boot() {
   state.teams = state.meta.teams; state.seasons = state.meta.seasons; state.defs = state.meta.rating_definitions;
   const url = new URL(location.href);
   // Allegiance beats the server default: your team opens first unless the URL says otherwise.
-  state.team = (url.searchParams.get("team") || state.favorite || state.meta.defaults.team || "TB").toUpperCase();
+  const landing = location.pathname.match(/^\/s\/([A-Za-z]{2,3})$/); // share landing: team comes from the path
+  state.team = (url.searchParams.get("team") || (landing && landing[1]) || state.favorite || state.meta.defaults.team || "TB").toUpperCase();
   state.season = Number(url.searchParams.get("season") || state.meta.defaults.season || state.seasons[0]);
   state.coach = url.searchParams.get("mode") === "coach";
   const ts = $("#team"); ts.innerHTML = state.teams.map((t) => `<option ${t === state.team ? "selected" : ""}>${t}</option>`).join("");
@@ -101,11 +102,12 @@ async function boot() {
   document.addEventListener("click", (e) => { const b = e.target.closest("[data-ask]"); if (b) ask(b.dataset.ask.replaceAll("Tampa", teamName(state.team))); });
   $("#rate-differently").onclick = rateDifferently;
   $("#fav").onclick = setFavorite;
+  $("#share").onclick = openShareCard;
   syncFavoriteFromServer();
   $("#show-league").onclick = showLeague;
   const q0 = url.searchParams.get("q"); if (q0) ask(q0);
 }
-function syncUrl() { const u = new URL(location.href); u.searchParams.set("team", state.team); u.searchParams.set("season", state.season); u.searchParams.set("mode", state.coach ? "coach" : "fan"); u.searchParams.set("view", state.view); if (state.headline && state.headline !== "third_down") u.searchParams.set("headline", state.headline); else u.searchParams.delete("headline"); history.replaceState(null, "", u); }
+function syncUrl() { const u = new URL(location.href); if (/^\/s\//.test(u.pathname)) u.pathname = "/"; u.searchParams.set("team", state.team); u.searchParams.set("season", state.season); u.searchParams.set("mode", state.coach ? "coach" : "fan"); u.searchParams.set("view", state.view); if (state.headline && state.headline !== "third_down") u.searchParams.set("headline", state.headline); else u.searchParams.delete("headline"); history.replaceState(null, "", u); }
 function renderSuggest() { const s = $("#suggest"); s.innerHTML = ""; for (const q of state.meta.suggested_questions) s.append(el(`<button class="chip" data-ask="${esc(q)}">${esc(q.replaceAll("Tampa", teamName(state.team)))}</button>`)); }
 
 // ------------------------------------------------------------------ home
@@ -624,6 +626,88 @@ async function requireIdentity() { const id = loadIdentity(); if (id) return id;
 async function fanPost(path, body) {
   const id = await requireIdentity(); if (!id) return null;
   return api(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fan_id: id.fan_id, handle: id.handle, ...body }) });
+}
+
+// ------------------------------------------------------------ sharecard
+// The headline as a 1200×630 PNG: team hero, logo, the ring, the six ratings, signature + heel, the
+// provenance line. Drawn on a canvas from same-origin assets (no taint), so it can be copied, downloaded
+// or handed to the native share sheet. Caption + canonical URL come from /api/v1/share (one source with
+// the OG tags on /s/TEAM). Social intents open in a new tab with that caption + URL — X, Facebook, Threads,
+// Reddit, LinkedIn; Instagram has no web intent, so it gets image + caption on the clipboard.
+const SHARE_W = 1200, SHARE_H = 630;
+function loadImg(src) { return new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error(`could not load ${src}`)); i.src = src; }); }
+function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function headlineNumbers() {
+  const h = state.home; const sj = state.headline || "third_down";
+  if (!h) return null;
+  if (sj === "third_down") { const s = h.rating; return s ? { score: s.score, rank: s.rank, of: s.of, sample: s.sample_size, def: s.definition, provisional: s.provisional } : null; }
+  const r = (h.ratings || []).find((x) => x.subject === sj) || null; const cur = state.rating?.summary;
+  if (!r) return null;
+  return { score: cur?.definition_id && cur.definition_id !== r.definition_id ? cur.score : r.score, rank: cur?.definition_id && cur.definition_id !== r.definition_id ? cur.rank : r.rank, of: r.of, sample: r.sample, def: cur?.definition_id && cur.definition_id !== r.definition_id ? cur.definition_id : r.definition_name, provisional: r.provisional };
+}
+async function drawShareCard(canvas) {
+  const ctx = canvas.getContext("2d"); canvas.width = SHARE_W; canvas.height = SHARE_H;
+  const t = state.team; const name = TEAMS[t]?.[0] ?? t; const accent = TEAMS[t]?.[1] ?? "#c8ff3d";
+  const sj = state.headline || "third_down"; const label = headlineLabel(sj); const unit = headlineUnit(sj); const n = headlineNumbers(); const h = state.home;
+  try { await document.fonts.load("900 120px 'Barlow Condensed'"); await document.fonts.load("700 28px 'Barlow Condensed'"); await document.fonts.load("500 20px 'JetBrains Mono'"); } catch {}
+  const D = "'Barlow Condensed', Impact, 'Arial Narrow', sans-serif", M = "'JetBrains Mono', ui-monospace, Menlo, monospace";
+  // background: hero (cover), then a left-heavy darkening so the numbers read.
+  ctx.fillStyle = "#07090d"; ctx.fillRect(0, 0, SHARE_W, SHARE_H);
+  try { const hero = await loadImg(`/hero/${t}.jpg`); const sc = Math.max(SHARE_W / hero.width, SHARE_H / hero.height); const w = hero.width * sc, hh = hero.height * sc; ctx.globalAlpha = 0.9; ctx.drawImage(hero, (SHARE_W - w) / 2, (SHARE_H - hh) / 2, w, hh); ctx.globalAlpha = 1; } catch (e) { console.warn(`sharecard: ${e.message} — gradient background`); const g = ctx.createLinearGradient(0, 0, SHARE_W, SHARE_H); g.addColorStop(0, accent + "55"); g.addColorStop(1, "#07090d"); ctx.fillStyle = g; ctx.fillRect(0, 0, SHARE_W, SHARE_H); }
+  const g1 = ctx.createLinearGradient(0, 0, SHARE_W, 0); g1.addColorStop(0, "rgba(7,9,13,.94)"); g1.addColorStop(0.55, "rgba(7,9,13,.78)"); g1.addColorStop(1, "rgba(7,9,13,.35)"); ctx.fillStyle = g1; ctx.fillRect(0, 0, SHARE_W, SHARE_H);
+  const g2 = ctx.createLinearGradient(0, 0, 0, SHARE_H); g2.addColorStop(0, "rgba(7,9,13,.1)"); g2.addColorStop(1, "rgba(7,9,13,.85)"); ctx.fillStyle = g2; ctx.fillRect(0, 0, SHARE_W, SHARE_H);
+  ctx.fillStyle = accent; ctx.fillRect(0, 0, 10, SHARE_H); // accent bevel
+  // logo + names
+  try { const logo = await loadImg(logoUrl(t)); ctx.drawImage(logo, 56, 44, 120, 120); } catch (e) { console.warn(`sharecard: ${e.message}`); }
+  ctx.fillStyle = "#fff"; ctx.font = `900 92px ${D}`; ctx.textBaseline = "top"; ctx.fillText(t, 196, 40);
+  ctx.fillStyle = "rgba(255,255,255,.72)"; ctx.font = `700 30px ${D}`; ctx.fillText(name.toUpperCase(), 198, 132); ctx.font = `500 20px ${M}`; ctx.fillText(`${state.season} · SPORTS-RATER · CHALK`, 198, 168);
+  // ring + headline number
+  const cx = 168, cy = 400, R = 118; ctx.lineWidth = 18; ctx.strokeStyle = "rgba(255,255,255,.12)"; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+  const score = n?.score ?? 0; ctx.strokeStyle = accent; ctx.lineCap = "round"; ctx.beginPath(); ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * score) / 100); ctx.stroke();
+  ctx.fillStyle = "#fff"; ctx.font = `900 118px ${D}`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(n ? String(n.score ?? "–") : "–", cx, cy - 6); ctx.font = `500 20px ${M}`; ctx.fillStyle = "rgba(255,255,255,.6)"; ctx.fillText("/100", cx, cy + 74); ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(255,255,255,.7)"; ctx.font = `700 26px ${D}`; ctx.fillText(`${label.toUpperCase()} RATING`, 330, 268);
+  if (n) { ctx.fillStyle = accent; ctx.font = `900 72px ${D}`; ctx.fillText(`#${n.rank}`, 330, 296); const w = ctx.measureText(`#${n.rank}`).width; ctx.fillStyle = "#fff"; ctx.font = `700 44px ${D}`; ctx.fillText(`of ${n.of}`, 330 + w + 14, 318); ctx.fillStyle = "rgba(255,255,255,.65)"; ctx.font = `500 20px ${M}`; ctx.fillText(`${n.def ?? ""} · ${n.sample} ${unit}${n.provisional ? " · provisional" : ""}`, 330, 380); }
+  else { ctx.fillStyle = "rgba(255,255,255,.65)"; ctx.font = `500 22px ${M}`; ctx.fillText(`no ${state.season} ${label.toLowerCase()} rating yet`, 330, 310); }
+  // badges: signature + heel
+  const badges = (h?.badges || []).filter((b) => b.kind === "signature" || b.kind === "heel"); let bx = 330;
+  for (const b of badges) { const txt = `${b.kind === "signature" ? "SIGNATURE" : "ACHILLES HEEL"} · ${b.name.replace(/^(SIGNATURE|ACHILLES HEEL)\s*·\s*/i, "").toUpperCase()}`; ctx.font = `700 18px ${D}`; const w = ctx.measureText(txt).width + 28; ctx.fillStyle = b.kind === "signature" ? accent + "33" : "rgba(255,77,94,.22)"; roundRect(ctx, bx, 418, w, 34, 17); ctx.fill(); ctx.strokeStyle = b.kind === "signature" ? accent : "#ff4d5e"; ctx.lineWidth = 1.5; ctx.stroke(); ctx.fillStyle = "#fff"; ctx.fillText(txt, bx + 14, 426); bx += w + 8; }
+  // six ratings strip
+  const list = h?.ratings || []; const tileW = 172, gap = 10, x0 = 330, y0 = 470;
+  list.slice(0, 6).forEach((r, i) => { const x = x0 + i * (tileW + gap) - (i >= 4 ? 0 : 0); if (x + tileW > SHARE_W - 24) return; ctx.fillStyle = r.subject === sj ? accent + "26" : "rgba(255,255,255,.07)"; roundRect(ctx, x, y0, tileW, 92, 14); ctx.fill(); if (r.subject === sj) { ctx.strokeStyle = accent; ctx.lineWidth = 1.5; ctx.stroke(); } ctx.fillStyle = "rgba(255,255,255,.62)"; ctx.font = `700 15px ${D}`; ctx.fillText(r.label.toUpperCase(), x + 12, y0 + 10); ctx.fillStyle = "#fff"; ctx.font = `900 40px ${D}`; ctx.fillText(String(r.score ?? "–"), x + 12, y0 + 30); ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.font = `500 14px ${M}`; ctx.fillText(`#${r.rank} of ${r.of}`, x + 12, y0 + 70); });
+  // footer
+  ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.font = `500 16px ${M}`; ctx.fillText(`sports-rater.com/s/${t} · deterministic, every number traceable · provenance proves${h?.computed_at?.seq ? ` · seq ${h.computed_at.seq}` : ""}`, 24, SHARE_H - 34);
+  ctx.textAlign = "right"; ctx.fillText("© 2026 Interchained LLC", SHARE_W - 24, SHARE_H - 34); ctx.textAlign = "left";
+  return canvas;
+}
+async function openShareCard() {
+  const sj = state.headline || "third_down";
+  const card = el(`<article class="card share"><header class="card-head"><div class="q">Share · ${esc(teamName(state.team))} ${esc(headlineLabel(sj))}</div><div class="badges"><span class="badge lime">1200×630</span></div></header><canvas width="${SHARE_W}" height="${SHARE_H}" aria-label="share card"></canvas><div class="acts"><button class="chip" data-act="copy">Copy image</button><button class="chip" data-act="download">Download PNG</button><button class="chip" data-act="caption">Copy caption</button><button class="chip" data-act="native" hidden>Share…</button><span class="out"></span></div><div class="soc"></div><pre class="cap">…</pre></article>`);
+  showCard(card);
+  const canvas = $("canvas", card), out = $(".out", card), cap = $(".cap", card), soc = $(".soc", card);
+  const say = (m, err) => { out.textContent = m; out.classList.toggle("err", Boolean(err)); };
+  let copy = null;
+  try { copy = await api(`/api/v1/share/${state.team}?season=${state.season}&headline=${sj}`); }
+  catch (e) { say(`caption from server unavailable (${e.message}) — using a local one`, true); const n = headlineNumbers(); const url = `${location.origin}/s/${state.team}?season=${state.season}${sj !== "third_down" ? `&headline=${sj}` : ""}`; copy = { title: `${state.team} ${headlineLabel(sj)} — Sports-Rater`, text: `${teamName(state.team)} ${state.season} — ${headlineLabel(sj)} ${n?.score ?? "–"}/100 · #${n?.rank ?? "–"} of ${n?.of ?? "–"}.\nDeterministic, every number traceable. Provenance proves.\n${url}`, url, hashtags: ["SportsRater", "CHALK", state.team] }; }
+  cap.textContent = copy.text;
+  try { await drawShareCard(canvas); } catch (e) { say(`could not draw the card: ${e.message}`, true); }
+  const blob = () => new Promise((ok) => canvas.toBlob(ok, "image/png"));
+  const file = async () => new File([await blob()], `sports-rater-${state.team}-${sj}-${state.season}.png`, { type: "image/png" });
+  const intents = [
+    ["X", `https://twitter.com/intent/tweet?text=${encodeURIComponent(copy.text.replace(copy.url, "").trim())}&url=${encodeURIComponent(copy.url)}&hashtags=${encodeURIComponent((copy.hashtags || []).join(","))}`],
+    ["Facebook", `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(copy.url)}&quote=${encodeURIComponent(copy.text)}`],
+    ["Threads", `https://www.threads.net/intent/post?text=${encodeURIComponent(copy.text)}`],
+    ["Reddit", `https://www.reddit.com/submit?url=${encodeURIComponent(copy.url)}&title=${encodeURIComponent(copy.title)}`],
+    ["LinkedIn", `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(copy.url)}`],
+  ];
+  for (const [n, href] of intents) soc.append(el(`<a class="chip" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(n)}</a>`));
+  const ig = el(`<button class="chip" title="Instagram has no web share — copies the image and caption, then opens Instagram">Instagram</button>`);
+  ig.onclick = async () => { try { await navigator.clipboard.write([new ClipboardItem({ "image/png": await blob() })]); say("image copied — paste it in Instagram; caption below is ready to copy"); tele("share"); window.open("https://www.instagram.com/", "_blank", "noopener"); } catch (e) { say(`copy failed (${e.message}) — use Download PNG`, true); } };
+  soc.append(ig);
+  card.querySelector('[data-act="copy"]').onclick = async () => { try { await navigator.clipboard.write([new ClipboardItem({ "image/png": await blob() })]); say("image copied"); tele("share"); } catch (e) { say(`copy failed (${e.message}) — use Download PNG`, true); } };
+  card.querySelector('[data-act="download"]').onclick = async () => { const f = await file(); const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); say(`downloaded ${f.name}`); tele("share"); };
+  card.querySelector('[data-act="caption"]').onclick = async () => { try { await navigator.clipboard.writeText(copy.text); say("caption copied"); } catch (e) { say(`copy failed: ${e.message}`, true); } };
+  const nat = card.querySelector('[data-act="native"]');
+  if (navigator.share) { nat.hidden = false; nat.onclick = async () => { try { const f = await file(); const data = { title: copy.title, text: copy.text, url: copy.url }; if (navigator.canShare && navigator.canShare({ files: [f] })) data.files = [f]; await navigator.share(data); say("shared"); tele("share"); } catch (e) { if (e.name !== "AbortError") say(`share failed: ${e.message}`, true); } }; }
 }
 
 // ------------------------------------------------------------------- feed

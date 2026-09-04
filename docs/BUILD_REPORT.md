@@ -5,6 +5,15 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.0 · the headline sharecard
+
+- **Mark:** "make the headline sharecard! Thats the next unlock branded with team hero and logo and everything stats on the card ready to share copyable and open social link on click? X, insta, facebook, etc?"
+- **The card:** a 1200×630 PNG drawn on a canvas from same-origin assets — team hero (cover, darkened left-heavy so the numbers read), accent bevel in the team colour, vendored logo, abbreviation + full name, the headline ring with score and `#rank of N`, formula + sample + provisional, SIGNATURE / ACHILLES HEEL pills, the six-rating strip with the headline highlighted, footer `sports-rater.com/s/TEAM · deterministic, every number traceable · provenance proves · seq N · © Interchained LLC`. Follows the active headline (v0.10.0) and an applied formula.
+- **Actions:** Copy image (ClipboardItem PNG), Download PNG, Copy caption, Share… (Web Share API with the file when the device allows), and intents for **X, Facebook, Threads, Reddit, LinkedIn** (new tab, caption + canonical URL). **Instagram** has no web intent: the button copies the image, leaves the caption ready, opens Instagram — said plainly on the button. Every failure names itself in the card.
+- **One source for the words:** `shareCopy(home, headline, base)` (pure, `src/server/share.ts`) → title, caption (numbers · signature/heel · formula · provenance line · link), canonical `/s/TEAM?season&headline`, preview image. Served at `GET /api/v1/share/TEAM`; the client falls back to a local caption if the route fails and says so.
+- **Link previews:** `GET /s/TEAM` serves the app shell with Open Graph + Twitter tags injected (`injectOg`, idempotent, escaped) — pasted links preview the hero and the headline number; the SPA reads the team from the path and normalises the URL. `publicBase`: `CHALK_PUBLIC_URL` → forwarded host/proto → `https://sports-rater.com`. Note: the OG image is the hero JPG (crawlers do not run canvases or accept SVG); the composited PNG is what fans copy/attach.
+- Tests: `shareCopy` (default/subject/fallback/no-rating), `injectOg` (escaping, placement, idempotent), `publicBase`; static guard for the client + routes. 100/100 both stores. Live on the local store: see PR. Not browser-verified (Mark's rule) — the canvas draw is the one piece only a browser proves.
+
 ## 2026-09-04 — v0.11.0 · the cut: fans get knobs that are not facts
 
 - **Mark:** "should we reduce rating to like favorites and easy things not stat related because we pull stats from the facts APIs" → "cut" → "and make sure the CHALK readings are not manipulated by fans give them other knobs to turn but not the facts."
