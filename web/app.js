@@ -179,31 +179,49 @@ async function loadCoachDeck() {
   const key = `${state.team}|${state.season}`;
   if (coachDeckKey === key) return; // already built for this team/season
   coachDeckKey = key;
-  const box = $("#coach-panels"); box.innerHTML = `<div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:90%"></div><div class="skeleton" style="width:80%"></div>`;
+  const box = $("#coach-panels"); box.innerHTML = "";
+  $("#coach-sub").textContent = `${state.team} ${state.season} · loading…`;
   const q = `team=${state.team}&season=${state.season}`;
-  const get = (u) => api(u).catch((e) => ({ __err: e.message }));
-  const [td, ...subs] = await Promise.all([get(`/api/v1/ratings/third-down?${q}`), ...SUBJECTS.slice(1).map((sj) => get(`/api/v1/ratings/${sj.replace("_", "-")}?${q}`))]);
-  const [scan, third, opp] = await Promise.all([get(`/api/v1/analyses/scan?${q}&side=offense`), get(`/api/v1/analyses/third-down?${q}`), get(`/api/v1/reports/opponent?${q}`)]);
-  if (coachDeckKey !== key) return;
-  box.innerHTML = "";
-  const panel = (title, sub, node) => { const p = el(`<section class="tile cpanel"><div class="tile-h">${esc(title)} <span class="muted">${esc(sub ?? "")}</span></div></section>`); p.append(node); box.append(p); };
-  const compCols = [{ h: "component", f: (c) => c.label ?? c.metric }, { h: "w", f: (c) => `${Math.round((c.weight ?? 0) * 100)}%`, num: 1 }, { h: "raw", f: (c) => (String(c.metric).includes("rate") ? fmtPct(c.raw === null ? null : Math.round(c.raw * 1000) / 10) : fmtNum(c.raw, 3)), num: 1 }, { h: "lg med", f: (c) => (String(c.metric).includes("rate") ? fmtPct(c.population_median === null ? null : Math.round(c.population_median * 1000) / 10) : fmtNum(c.population_median, 3)), num: 1 }, { h: "pct", f: (c) => (c.normalized === null || c.normalized === undefined ? "—" : Math.round(c.normalized * 100)), num: 1 }, { h: "rank", k: "rank", num: 1 }, { h: "pts", f: (c) => fmtNum(c.contribution, 1), num: 1 }];
-  const ratings = [{ subject: "third_down", r: td }, ...SUBJECTS.slice(1).map((sj, i) => ({ subject: sj, r: subs[i] }))];
-  for (const { subject, r } of ratings) {
-    if (!r || r.__err) { panel(subject.replace("_", " "), "unavailable", el(`<div class="err">${esc(r?.__err ?? "no data")}</div>`)); continue; }
-    const snap = r.snapshot; const of = Array.isArray(r.league) ? r.league.length : (r.population ?? "?");
-    panel(`${subject.replace("_", " ")} · ${snap.score}/100`, `#${r.rank} of ${of} · ${snap.definition_name ?? snap.definition_id} · n=${snap.sample_size}${snap.provisional ? " · provisional" : ""}`, tblEl(snap.components, compCols));
+  // Progressive: every panel gets a placeholder immediately and fills in as ITS request lands — the deck
+  // used to wait for the slowest of nine store-bound requests before painting anything (v0.9.3).
+  // Every failure names itself in its panel; nothing is skipped silently.
+  const panel = (title, score) => {
+    const p = el(`<section class="tile cpanel pending"><div class="ph"><div class="t">${esc(title)}${score !== undefined ? ` <b>${esc(String(score))}</b>` : ""}</div><div class="s">…</div></div><div class="skeleton" style="width:80%"></div><div class="skeleton" style="width:60%"></div></section>`);
+    box.append(p);
+    return {
+      fill(score, sub, node) { p.classList.remove("pending"); p.querySelectorAll(".skeleton").forEach((x) => x.remove()); if (score !== undefined) $(".t", p).innerHTML = `${esc(title)} <b>${esc(String(score))}</b>`; $(".s", p).textContent = sub ?? ""; if (node) p.append(node); },
+      fail(msg) { p.classList.remove("pending"); p.querySelectorAll(".skeleton").forEach((x) => x.remove()); $(".s", p).textContent = "unavailable"; p.append(el(`<div class="err">${esc(msg)}</div>`)); },
+    };
+  };
+  const compCols = [{ h: "component", f: (c) => c.label ?? c.metric }, { h: "w", f: (c) => `${Math.round((c.weight ?? 0) * 100)}%`, num: 1 }, { h: "raw", f: (c) => (String(c.metric).includes("rate") ? fmtPct(c.raw === null ? null : Math.round(c.raw * 1000) / 10) : fmtNum(c.raw, 3)), num: 1 }, { h: "lg med", f: (c) => (String(c.metric).includes("rate") ? fmtPct(c.league_median === null || c.league_median === undefined ? null : Math.round(c.league_median * 1000) / 10) : fmtNum(c.league_median, 3)), num: 1 }, { h: "pct", f: (c) => (c.percentile ?? "—"), num: 1 }, { h: "rank", f: (c) => (c.rank ?? "—"), num: 1 }, { h: "pts", f: (c) => fmtNum(c.points, 1), num: 1 }];
+  const jobs = [];
+  let okRatings = 0;
+  const run = (ph, url, render) => jobs.push(api(url).then((r) => { if (coachDeckKey !== key) return; render(r); }).catch((e) => { if (coachDeckKey !== key) return; console.warn(`coach deck: ${url} failed — ${e.message}`); ph.fail(e.message); }));
+  for (const subject of SUBJECTS) {
+    const ph = panel(subject.replace("_", " "));
+    run(ph, `/api/v1/ratings/${subject.replace("_", "-")}?${q}`, (r) => {
+      const snap = r.snapshot; if (!snap) throw new Error(`no snapshot in response (keys: ${Object.keys(r).join(", ")})`);
+      const of = Array.isArray(r.league) ? r.league.length : (r.population ?? "?");
+      okRatings++;
+      ph.fill(`${snap.score}/100`, `#${r.rank} of ${of} · ${snap.definition_name ?? snap.definition_id} · n=${snap.sample_size}${snap.provisional ? " · provisional" : ""}`, tblEl(snap.components, compCols));
+    });
   }
-  if (third && !third.__err) { const a = third.summary; panel("Third down by distance", `${a.conversions}/${a.attempts} (${fmtPct(a.conversion_pct)}) · ${a.confidence}`, tblEl(a.by_distance, [{ h: "to go", k: "distance" }, { h: "att", k: "attempts", num: 1 }, { h: "conv", k: "conversions", num: 1 }, { h: "conv%", f: (r) => fmtPct(r.conversion_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }, { h: "pass%", f: (r) => fmtPct(r.pass_pct), num: 1 }])); }
-  if (scan && !scan.__err) {
+  const phThird = panel("Third down by distance");
+  run(phThird, `/api/v1/analyses/third-down?${q}`, (third) => { const a = third.summary; if (!a) throw new Error("no summary in response"); phThird.fill(undefined, `${a.conversions}/${a.attempts} (${fmtPct(a.conversion_pct)}) · ${a.confidence}`, tblEl(a.by_distance, [{ h: "to go", k: "distance" }, { h: "att", k: "attempts", num: 1 }, { h: "conv", k: "conversions", num: 1 }, { h: "conv%", f: (r) => fmtPct(r.conversion_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }])); });
+  const phWeak = panel("Weakest situations"), phStrong = panel("Strongest situations");
+  run(phWeak, `/api/v1/analyses/scan?${q}&side=offense`, (scan) => {
     const row = (b) => ({ situation: b.label, snaps: b.metrics?.attempts, epa: b.metrics?.epa_per_play, d: b.epa_delta_vs_team, succ: b.metrics?.success_rate });
     const cols = [{ h: "situation", k: "situation" }, { h: "snaps", k: "snaps", num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa, 3), num: 1 }, { h: "vs team", f: (r) => fmtNum(r.d, 3), num: 1 }, { h: "succ%", f: (r) => fmtPct(r.succ === null || r.succ === undefined ? null : Math.round(r.succ * 1000) / 10), num: 1 }];
-    panel("Weakest situations", `baseline ${fmtNum(scan.baseline?.epa_per_play, 3)} EPA/play · min ${scan.min_sample} snaps`, tblEl((scan.weakest ?? []).slice(0, 8).map(row), cols));
-    panel("Strongest situations", "", tblEl((scan.strongest ?? []).slice(0, 6).map(row), cols));
-  }
-  if (opp && !opp.__err) { const o = opp.summary; panel(`Opponent · ${o.opponent} ${o.opponent_side}`, `${o.baseline?.snaps ?? "?"} snaps · ${fmtPct(o.baseline?.pass_pct)} pass · ${fmtNum(o.baseline?.epa_per_play, 3)} EPA/play`, tblEl(o.sections, [{ h: "situation", k: "situation" }, { h: "snaps", k: "snaps", num: 1 }, { h: "pass%", f: (r) => fmtPct(r.pass_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }, { h: "succ%", f: (r) => fmtPct(r.success_pct), num: 1 }, { h: "conv%", f: (r) => fmtPct(r.conversion_pct), num: 1 }])); }
-  else if (opp?.__err) panel("Opponent", "", el(`<div class="muted">${esc(opp.__err)}</div>`));
-  $("#coach-sub").textContent = `${state.team} ${state.season} · ${ratings.filter((x) => x.r && !x.r.__err).length} ratings · deterministic, every number traceable`;
+    phWeak.fill(undefined, `baseline ${fmtNum(scan.baseline?.epa_per_play, 3)} EPA/play · min ${scan.min_sample} snaps`, tblEl((scan.weakest ?? []).slice(0, 8).map(row), cols));
+    phStrong.fill(undefined, `vs team baseline`, tblEl((scan.strongest ?? []).slice(0, 6).map(row), cols));
+  });
+  const phOpp = panel("Opponent");
+  run(phOpp, `/api/v1/reports/opponent?${q}`, (opp) => { const o = opp.summary; if (!o) throw new Error("no summary in response"); phOpp.fill(undefined, `${o.opponent} ${o.opponent_side} · ${o.baseline?.snaps ?? "?"} snaps · ${fmtPct(o.baseline?.pass_pct)} pass · ${fmtNum(o.baseline?.epa_per_play, 3)} EPA/play`, tblEl(o.sections, [{ h: "situation", k: "situation" }, { h: "snaps", k: "snaps", num: 1 }, { h: "pass%", f: (r) => fmtPct(r.pass_pct), num: 1 }, { h: "epa/p", f: (r) => fmtNum(r.epa_per_play, 3), num: 1 }, { h: "succ%", f: (r) => fmtPct(r.success_pct), num: 1 }])); });
+  await Promise.allSettled(jobs);
+  if (coachDeckKey !== key) return;
+  // the scan request feeds two panels; if it failed, the second must say so too rather than sit pending
+  if (phStrong && box.querySelector(".cpanel.pending")) for (const p of box.querySelectorAll(".cpanel.pending")) { p.classList.remove("pending"); p.querySelectorAll(".skeleton").forEach((x) => x.remove()); $(".s", p).textContent = "unavailable"; p.append(el(`<div class="err">the situational scan request failed — see Weakest situations</div>`)); }
+  $("#coach-sub").textContent = `${state.team} ${state.season} · ${okRatings}/${SUBJECTS.length} ratings · deterministic, every number traceable`;
 }
 
 // ---- Views: Dashboard (team home) | Feed (every completion, live asks on top).

@@ -5,6 +5,15 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.9.3 · coach deck: clipped tables, smeared headers, all-or-nothing load
+
+- **Mark:** coach mode "never fully loads properly" once (recovered after a reboot), and when it does "loads eventually but ugly" — screenshot: component tables cut off on both sides (C of COMPONENT, E of EPA, PTS column), panel titles and sub-lines smeared into two columns.
+- **Clipping (root cause):** `.cpanel` is a grid item; grid items default to `min-width: auto`, so each panel grew to its table's intrinsic width instead of letting `.tbl`'s `overflow-x: auto` scroll. Two over-wide panels in a two-column grid overlapped each other and the deck edge. Fix: `min-width: 0` on the item, `max-width: 100%` on the table wrapper — the pro scrollbar now does its job.
+- **Headers:** `.tile-h` is flex space-between (right for one-line tile titles, wrong for title + long sub). Coach panels get a stacked header: uppercase title with the score in mono accent, mono sub-line beneath.
+- **Load (root cause of "never fully loads"):** two `Promise.all` waves — nothing painted until the slowest of nine store-bound requests returned (they queue on the single worker; during a Home rebuild that is seconds each) — and no try/catch around rendering, so any thrown render error left the skeleton bars forever. Third-down and scan failures were also skipped silently (my own rule, broken). Now every panel gets a placeholder immediately and fills in as its own request lands (`Promise.allSettled`); every failure is named in its panel and logged; the second scan panel says so when the shared scan request fails; the sub-line counts `ok/6 ratings`.
+- **Not ours:** the console error Mark saw — `et.reportAllChanges … requestIdleCallback … Cannot read properties of undefined (reading 'startTime')` in `VM370` — is not in our client (zero matches for `reportAllChanges` / `startTime` / `requestIdleCallback`; we load exactly one script, `/app.js`). That stack is the web-vitals library inside an injected script: a browser extension or Cloudflare Web Analytics' RUM beacon. Live HTML served by the origin carries only `/app.js`, so if it recurs it is edge- or extension-injected. It cannot block our module either way.
+- Tests: static guard — allSettled per-panel, no `Promise.all([` wave, failures named + logged, `min-width: 0` / `max-width: 100%` present. 90/90 both stores. Not browser-verified here (Mark's rule); verify: Coach → deck panels appear one by one, tables scroll inside their panel instead of clipping.
+
 ## 2026-09-04 — v0.9.2 · League and Rate differently posted into a hidden view
 
 - **Mark:** "When I click 'League' label or even if I click 'Rate differently' nothing happens."

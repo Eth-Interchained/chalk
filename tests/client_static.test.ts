@@ -108,3 +108,16 @@ test("every card dropped into #feed goes through showCard (v0.9.2: League / Rate
     assert.ok(body.slice(0, body.indexOf("\n}\n")).includes("showCard("), `${fn} must render via showCard`);
   }
 });
+
+test("coach deck renders progressively, names every failure, and cannot overflow its grid column (v0.9.3)", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../web/styles.css", import.meta.url), "utf8");
+  const fn = js.slice(js.indexOf("async function loadCoachDeck("));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.ok(body.includes("Promise.allSettled(jobs)"), "per-panel jobs settle independently — no all-or-nothing wave");
+  assert.ok(!body.includes("Promise.all(["), "no Promise.all wave gating the whole deck");
+  assert.ok(body.includes("ph.fail(e.message)"), "every failed request names itself in its panel");
+  assert.ok(body.includes('console.warn(`coach deck: ${url} failed'), "failures are logged, not swallowed");
+  assert.match(css, /\.coach-panels \.cpanel \{[^}]*min-width: 0/, "grid item needs min-width:0 or the table's intrinsic width overflows the column");
+  assert.match(css, /\.coach-panels \.cpanel \.tbl \{[^}]*max-width: 100%/);
+});
