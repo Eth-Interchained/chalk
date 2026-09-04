@@ -183,3 +183,53 @@ test("watch loop is deep by default; CHALK_WATCH_DEEP=0 opts out; --deep always 
   assert.equal(resolveWatchDeep(undefined, "off"), false);
   assert.equal(resolveWatchDeep(true, "0"), true);
 });
+
+test("nfldata: a short page before the advertised total throws instead of quietly ending the walk", async () => {
+  const { NFLDataSource } = await import("../src/source/nfldata.ts");
+  const mk = (data: unknown[], total: number) => new NFLDataSource({ retries: 0, fetchImpl: (async () => new Response(JSON.stringify({ data, total, limit: 500, offset: 0 }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch });
+  const rows = (n: number) => Array.from({ length: n }, (_, i) => ({ game_id: "g", play_id: i + 1 }));
+  // Honest short page: 3 rows, total 3 -> yields 3 and stops.
+  const got: unknown[] = [];
+  for await (const page of mk(rows(3), 3).plays({ gameId: "g" })) got.push(...page);
+  assert.equal(got.length, 3);
+  // Contradiction: 3 rows, total 169 -> error names the gap.
+  await assert.rejects(async () => { for await (const _ of mk(rows(3), 169).plays({ gameId: "g" })) { /* drain */ } }, /short page: got 3 of advertised 169/);
+  // Empty body with total 0 is accepted by the source layer (nothing to contradict) — the ingest floor catches it.
+  const none: unknown[] = [];
+  for await (const page of mk([], 0).plays({ gameId: "g" })) none.push(...page);
+  assert.equal(none.length, 0);
+});
+
+test("ingest: a completed game with too few plays is recorded in errors, not silently accepted", { skip }, async () => {
+  const { MIN_PLAYS_COMPLETED_GAME } = await import("../src/ingest/audit.ts");
+  const src = new FixtureSource();
+  src.plays_payload = src.plays_payload.slice(0, 20);
+  const r = await ingest({ store, source: src, scope: { gameId: FIXTURE_GAME_ID }, log: () => {} });
+  assert.equal(r.plays_fetched, 20);
+  const e = r.errors.find((x) => x.where === "plays" && x.id === FIXTURE_GAME_ID);
+  assert.ok(e, "expected a plays error for the short game");
+  assert.match(e!.error, new RegExp(`returned 20 plays .* \\(floor ${MIN_PLAYS_COMPLETED_GAME}\\)`));
+  assert.match(e!.error, /--game 2025_18_CAR_TB/);
+});
+
+test("audit: names games below the play floor and games without context; empty season is ok", { skip }, async () => {
+  const { auditSeason } = await import("../src/ingest/audit.ts");
+  const a = await auditSeason(store, 2025);
+  assert.equal(a.games_with_results, 1);
+  assert.equal(a.per_game[0].game_id, FIXTURE_GAME_ID);
+  assert.ok(a.per_game[0].plays >= 20);
+  assert.equal(a.per_game[0].context, 0);
+  assert.ok(a.short_games.length === 0 || a.short_games[0].game_id === FIXTURE_GAME_ID);
+  if (a.per_game[0].plays >= 100) {
+    assert.equal(a.ok, true);
+    assert.equal(a.games_without_context.length, 1);
+    assert.match(a.summary, /without context/);
+  } else {
+    assert.equal(a.ok, false);
+    assert.match(a.summary, /short of the 100-play floor: 2025_18_CAR_TB/);
+  }
+  const empty = await auditSeason(store, 1999);
+  assert.equal(empty.ok, true);
+  assert.equal(empty.games_listed, 0);
+  assert.match(empty.summary, /Nothing missing/);
+});

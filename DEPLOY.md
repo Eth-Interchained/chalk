@@ -42,7 +42,7 @@ sudo -u chalk -H bash -c 'cd /opt/chalk && set -a && . ./.env && set +a &&
   node bin/chalk.ts verify'
 ```
 
-Expect: 285 games / 48,771 plays; ~47k context rows; 272 scheduled 2026 games; `verify` → `ok: true, tamper_evident: true`. Each command opens the embedded store, writes, flushes, exits.
+Expect: 285 games / 48,771 plays; ~47k context rows; 272 scheduled 2026 games; `verify` → `ok: true, tamper_evident: true`. Then `node bin/chalk.ts audit --season 2025` → `ok: true` (exit 2 and a named game if the source shorted one). Each command opens the embedded store, writes, flushes, exits.
 
 ## 4. Serve (API + client + in-process watch loop)
 
@@ -80,6 +80,7 @@ curl -sN -X POST https://sports-rater.com/api/v1/ask -H 'content-type: applicati
 | Logs | `journalctl -u chalk -f` (API, watch ticks and the embedded engine all log here) |
 | Integrity | `curl -s http://127.0.0.1:4040/api/v1/verify` |
 | Ingest status | `curl -s http://127.0.0.1:4040/api/v1/ingest/status \| head -c 800` |
+| Season audit (is anything missing?) | `curl -s "http://127.0.0.1:4040/api/v1/ingest/audit?season=2025"` — names games below the 100-play floor or without context; `&full=1` for per-game counts. Fix a short game with `chalk ingest --season 2025 --game <ID> --deep` (stop `chalk` first). |
 | Force a re-ingest now | `sudo systemctl restart chalk` (first watch tick is immediate) |
 | Backup | `sudo systemctl stop chalk`, tar `/opt/chalk/chalk-data`, start. Content-addressed and hash-chained; `chalk verify` after restore. |
 | Game day | the in-process watch keeps polling (plays + context every tick; `CHALK_WATCH_DEEP=0` to skip context if the source throttles); set `CHALK_WATCH_INTERVAL=600` in `.env` for 10-minute ticks and restart `chalk`. Premium TheSportsDB key in `.env` unlocks the live scoreboard path. |

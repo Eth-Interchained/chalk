@@ -4,6 +4,24 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.6.3 · no silent short games: source contradictions error, ingest floor, season audit
+
+### SHIPPED
+- **Root cause of the 48,602-vs-48,771 gap on Mark's VPS (0 errors, 285 games):** `NFLDataSource.paginate` stopped on any short page, and `ingest` accepted a completed game with 0–N plays without comment. A 200 with an empty/partial body for one game cost 169 plays and left no trace. Trigger: upstream partial response. Root cause: two silent-accept paths in CHALK.
+- `paginate`: a short page BEFORE the advertised `total` now throws `SourceError` (endpoint, offset/total, page size, params, body head) → lands in the run's `errors` for that game; the next run refetches. `total` reached or an honest short final page still ends the walk.
+- `ingest`: a completed game returning fewer than `MIN_PLAYS_COMPLETED_GAME` (100; the shortest real 2025 game had 135) is written as received AND recorded in `errors` with the exact refetch command. Nothing dropped, nothing quiet.
+- `src/ingest/audit.ts` — `auditSeason(store, season)`: per-game plays + context counts, `short_games`, `games_without_context`, min/max, `ok`, actionable `summary`. `GET /api/v1/ingest/audit?season=2025[&full=1]` (runs against the live server — no need to stop `serve`) and `chalk audit --season 2025 [--full]` (exit 2 when not ok).
+- Serve's deep log prints the actual `CHALK_WATCH_DEEP` value instead of asserting one cause. LOCK message reworded: "previous holder (pid N) has exited — taking the lock" — the core leaves LOCK behind on clean exit, so this is normal after every CLI run (reproduced: fresh dir, two `verify` runs).
+
+### VERIFIED ON THE REAL SYSTEM
+- Local store: `chalk audit --season 2025` → 285/285 games, 48,771 plays, min 2025_15_LV_PHI 135, max 2025_02_NYG_DAL 221, `ok: true`.
+- Tests: short-page contradiction throws / honest short page passes / empty+total 0 passes to the floor; ingest floor records the error with refetch command; audit on fixture store + empty season. Full suite both stores.
+
+### NEXT
+- Mark: `git pull`, `curl /api/v1/ingest/audit?season=2025` names the short game → `ingest --game <ID> --deep`.
+
+---
+
 ## 2026-09-04 — v0.6.2 · watch loop deep by default (+ v0.6.1 nedb-engine ^2.8.4 pin)
 
 ### SHIPPED

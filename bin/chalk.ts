@@ -19,6 +19,7 @@ import { EmbeddedStore } from "../src/store/embedded.ts";
 import { NFLDataSource } from "../src/source/nfldata.ts";
 import { resolveWatchDeep } from "../src/ingest/watch_config.ts";
 import { ingest } from "../src/ingest/ingest.ts";
+import { auditSeason } from "../src/ingest/audit.ts";
 import { runThirdDown, summarizeThirdDown } from "../src/engine/thirddown.ts";
 import { rateThirdDown, loadDefinition, leagueThirdDown } from "../src/rating/league.ts";
 import { THIRD_DOWN_DEFAULT_V1 } from "../src/rating/definitions.ts";
@@ -290,6 +291,20 @@ async function main() {
       }
       return;
     }
+    case "audit": {
+      const season = num("season", Number(process.env.CHALK_DEFAULT_SEASON ?? 2025))!;
+      const { store, stop } = await boot();
+      try {
+        const a = await auditSeason(store, season);
+        const { per_game, ...rest } = a;
+        process.stdout.write(JSON.stringify(flags.full === true ? a : rest, null, 2) + "\n");
+        log(a.summary);
+        if (!a.ok) process.exitCode = 2;
+      } finally {
+        stop();
+      }
+      return;
+    }
     case "verify": {
       const { store, stop } = await boot();
       try {
@@ -315,7 +330,7 @@ async function main() {
       if (watchSeason) {
         const interval = num("watch-interval", Number(process.env.CHALK_WATCH_INTERVAL ?? 1800))!;
         const deep = resolveWatchDeep(flags.deep, process.env.CHALK_WATCH_DEEP);
-        log(`watch: season ${watchSeason} every ${interval}s in-process (${mode} store, deep=${deep} — context ${deep ? "included" : "skipped; CHALK_WATCH_DEEP=0"})`);
+        log(`watch: season ${watchSeason} every ${interval}s in-process (${mode} store, deep=${deep} — context ${deep ? "included" : `skipped because CHALK_WATCH_DEEP=${JSON.stringify(process.env.CHALK_WATCH_DEEP)}`})`);
         startWatchLoop(store, watchSeason, interval, deep, watchCtl.signal);
       } else {
         log(`watch: off (set CHALK_WATCH_SEASON or --watch-season to re-ingest + pulse on a cadence)`);
@@ -332,7 +347,7 @@ async function main() {
       return;
     }
     default:
-      process.stdout.write(`chalk — football intelligence engine\n\nusage:\n  chalk ingest --season 2025 [--team TB] [--game ID] [--deep]\n  chalk analyze --team TB --season 2025 [--game ID] [--side defense]\n  chalk rate --team TB --season 2025 [--definition ID]\n  chalk scan --team TB --season 2025\n  chalk league --season 2025\n  chalk pulse [--watch] [--interval 120]      near-live game state (TheSportsDB)\n  chalk watch --season 2026 [--interval 1800] re-ingest (deep by default; CHALK_WATCH_DEEP=0 to skip context) + pulse on a cadence\n  chalk rankings --season 2025 [--definition offense_default@1.0.0]\n  chalk verify\n  chalk serve [--port 4040] [--host 127.0.0.1]\n`);
+      process.stdout.write(`chalk — football intelligence engine\n\nusage:\n  chalk ingest --season 2025 [--team TB] [--game ID] [--deep]\n  chalk analyze --team TB --season 2025 [--game ID] [--side defense]\n  chalk rate --team TB --season 2025 [--definition ID]\n  chalk scan --team TB --season 2025\n  chalk league --season 2025\n  chalk pulse [--watch] [--interval 120]      near-live game state (TheSportsDB)\n  chalk watch --season 2026 [--interval 1800] re-ingest (deep by default; CHALK_WATCH_DEEP=0 to skip context) + pulse on a cadence\n  chalk rankings --season 2025 [--definition offense_default@1.0.0]\n  chalk audit --season 2025 [--full]        per-game play/context counts; names short or context-less games\n  chalk verify\n  chalk serve [--port 4040] [--host 127.0.0.1]\n`);
       process.exit(cmd ? 1 : 0);
   }
 }

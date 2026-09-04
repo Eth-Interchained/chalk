@@ -32,6 +32,7 @@ import {
   PLAY_NORMALIZER_VERSION,
 } from "./normalize.ts";
 import { normalizeContext, CONTEXT_NORMALIZER_VERSION, PLAY_CONTEXT, type PlayContext } from "./context.ts";
+import { MIN_PLAYS_COMPLETED_GAME } from "./audit.ts";
 
 export const INGEST_VERSION = "0.1.0";
 
@@ -167,6 +168,14 @@ export async function ingest(opts: IngestOptions): Promise<IngestResult> {
         const fetched: SourceRecord[] = [];
         for await (const page of source.plays({ gameId })) fetched.push(...page);
         counters.plays_fetched += fetched.length;
+        if (fetched.length < MIN_PLAYS_COMPLETED_GAME) {
+          // Source answered 200 with too little for a completed game (an empty
+          // or partial body). Write what arrived (idempotent, refetched next
+          // run) but NAME it — a silent short game cost 169 plays on 2026-09-04.
+          const msg = `source returned ${fetched.length} plays for completed game ${gameId} (floor ${MIN_PLAYS_COMPLETED_GAME}) — incomplete upstream response; kept what arrived, refetch with --game ${gameId}`;
+          counters.errors.push({ where: "plays", id: gameId, error: msg });
+          log(`WARN ${msg}`);
+        }
         await ingestPlaysForGame(store, gameId, fetched, ctx.game, counters, now, log);
       }
       if (scope.deep || scope.contextOnly) {
