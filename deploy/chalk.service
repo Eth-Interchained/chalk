@@ -1,8 +1,10 @@
-# /etc/systemd/system/chalk.service — the CHALK API + Sports-Rater client.
+# /etc/systemd/system/chalk.service — CHALK API + Sports-Rater client with NEDB
+# EMBEDDED in-process (no daemon). The watch loop (re-ingest + pulse) runs inside
+# this process when CHALK_WATCH_SEASON is set. One engine per data dir: nothing
+# else may open /opt/chalk/chalk-data while this unit runs.
 [Unit]
 Description=CHALK football intelligence (sports-rater.com)
-After=network.target nedbd-chalk.service
-Requires=nedbd-chalk.service
+After=network.target
 
 [Service]
 Type=simple
@@ -10,9 +12,10 @@ User=chalk
 Group=chalk
 WorkingDirectory=/opt/chalk
 EnvironmentFile=/opt/chalk/.env
-Environment=NEDB_URL=http://127.0.0.1:7070
-Environment=CHALK_AUTOSTART_NEDB=0
+Environment=CHALK_STORE=embedded
+Environment=CHALK_DATA=/opt/chalk/chalk-data
 ExecStart=/usr/bin/node /opt/chalk/bin/chalk.ts serve --host 127.0.0.1 --port 4040
+ReadWritePaths=/opt/chalk/chalk-data
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

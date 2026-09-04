@@ -27,7 +27,8 @@ import { computeRating, persistDefinition } from "../rating/rating.ts";
 import { LICENSING } from "../source/licensing.ts";
 import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
-import { ChalkStore, NedbError, nqlStr, type NedbRow } from "../store/nedb.ts";
+import { NedbError, nqlStr, type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import { GAME_STATE, PULSE_EVENTS, type GameStateDoc } from "../ingest/pulse.ts";
 import type { RawDoc } from "../ingest/ingest.ts";
 import { execute, summarizeRating } from "./intents.ts";
@@ -46,7 +47,7 @@ const ipLimiter = new RateLimiter(60, 1 / 5_000);
 setInterval(() => { fanLimiter.sweep(); ipLimiter.sweep(); }, 600_000).unref();
 
 export interface ServerOptions {
-  store: ChalkStore;
+  store: Store;
   host: string;
   port: number;
   log: (l: string) => void;
@@ -133,7 +134,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
     if (p === "/api/v1/health" && m === "GET") {
       const [health, seq, head] = await Promise.all([store.health().catch((e) => ({ ok: false, error: (e as Error).message })), store.seq().catch(() => null), store.head().catch(() => null)]);
-      return json(res, 200, { chalk: "ok", version: "0.5.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
+      return json(res, 200, { chalk: "ok", version: "0.6.0", nedb: { url: store.url, db: store.db, ...health, seq, head }, llm: llm ? { url: llm.url, model: llm.model, provider: llm.provider, has_key: Boolean(llm.key) } : null, defaults: { team: defaultTeam, season: defaultSeason || null } });
     }
     if (p === "/api/v1/openapi.json") return json(res, 200, openapiDocument(`${url.protocol}//${url.host}`));
     if (p === "/api/v1/meta") {

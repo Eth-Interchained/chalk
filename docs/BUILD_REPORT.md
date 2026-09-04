@@ -4,6 +4,32 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.6.0 · NEDB embedded (no daemon), one engine per process
+
+### SHIPPED
+- **`Store` interface** (`src/store/nedb.ts`) — everything above the store depends on it, not on the HTTP client. Two implementations: `ChalkStore` (HTTP to nedbd, unchanged) and **`EmbeddedStore`** (`src/store/embedded.ts`, napi `NedbCore` in-process).
+- **Embedded is the default.** `CHALK_STORE=embedded` / `CHALK_DATA=./chalk-data`. `NEDB_URL` or `CHALK_STORE=http` selects the daemon path (autostart kept there). `chalk serve` runs the watch loop **in-process** (`CHALK_WATCH_SEASON`/`--watch-season`) because one engine owns the directory. Deploy kit collapses to a single `chalk.service`; DEPLOY.md rewritten (ingest before the service starts).
+- **Tests run against both stores**: `npm test` = 55 HTTP + 55 embedded. `tests/stores.ts` picks by `CHALK_TEST_STORE`.
+- nedb-engine **v2.8.3 released** via `scripts/release.py v2.8.2 v2.8.3` (PR #70; contains PR #68 `_caused_by` projection on embedded reads and PR #69 NQL quote escaping). PyPI and crates.io show 2.8.3; npm follows when the release job finishes (waits on all platform addons, including the Codemagic Mac wheels — both queued by the tag, CI config untouched). CHALK pins `^2.8.2` and works on either.
+
+### VERIFIED ON THE REAL SYSTEM
+- Embedded serve over the SAME data dir the daemon had written (238k seq): six ratings identical (Offense 48 … Ball Security 73), scout CIN, ask "Why is Tampa struggling on third down?" → model plan → 227 plays → GLM narration, **16/16 numbers verified**; dad's fan chain continued (link #3, verified) across the store swap. `verify: true`.
+- Concurrent double open refused (core flock + CHALK pre-check).
+
+### DISCOVERED (evidence, not assumptions)
+1. **napi `put` already carries `caused_by`** when it is a top-level key of the doc JSON — TRACE walks the edges on 2.8.2. My first probe used `_caused_by` and concluded the binding lacked it; wrong key, wrong conclusion. The planned engine slice shrank to "release master" (whose PR #68 additionally projects `_caused_by` on embedded reads). EmbeddedStore normalizes both shapes so rows look identical on 2.8.2 and 2.8.3.
+2. **Layout is an env decision, not a file decision.** `NedbCore.open` on a v3 (`--dag-v3`) directory without `NEDB_DAG_V3=1` shows the MANIFEST seq but returns **zero rows for every query** — no error. EmbeddedStore pins `NEDB_DAG_V3=1`. Worth an engine-side guard (a v3 MANIFEST opened as v2 should refuse, not read empty).
+3. **In-process is not faster than HTTP for NQL scans.** Cold, on 48,771 plays: `game_id = X` 1.6s (HTTP 0.85s), season 2.4s (HTTP 3.0s), a `football_play_context` game lookup 8.3s; TRACE 1.3s; verify 1.8s. The cost is the engine's scan, not the wire. The 90s read-through cache carries the UX in both modes.
+4. **My EmbeddedStore cleared the cache on every put** → Home recomputed per request (17.4s warm). Removed; CHALK's own writes never touch the cached play/game scans, and the ingest/pulse event watcher remains the invalidation path. After the fix, embedded serve: warmup 11.0s, Home warm **537–674ms**, another team's Home first hit 4.3s, rankings 329ms, game page 2.4s.
+5. The core's exclusive `flock` on `LOCK` is real and refuses a second opener — the "locked by another process" error from night one was that guard doing its job. (I briefly misread a dead daemon's directory as "napi ignores the lock"; it doesn't.)
+
+### NEXT
+- Wait for npm 2.8.3 + Codemagic wheels, then pin CHALK to `^2.8.3` and drop the 2.8.2 `caused_by` echo normalization.
+- Engine follow-up worth filing: v3 MANIFEST opened as v2 should error, not read empty.
+- Game day Sept 10; deploy per DEPLOY.md.
+
+---
+
 ## 2026-09-04 — v0.5.0 · deploy kit, trends for every subject, Games tile
 
 ### SHIPPED

@@ -1,6 +1,6 @@
 # Deploying Sports-Rater (CHALK) on the VPS
 
-Target: `sports-rater.com` behind Cloudflare (Flexible today), nginx on the box, CHALK on `127.0.0.1:4040`, nedbd on `127.0.0.1:7070`, all as systemd services under a dedicated `chalk` user. Node ≥ 24 required (TypeScript runs natively — no build step).
+Target: `sports-rater.com` behind Cloudflare (Flexible today), nginx on the box, CHALK on `127.0.0.1:4040` with **NEDB embedded in-process** (no daemon), one systemd unit under a dedicated `chalk` user. Node ≥ 24 required (TypeScript runs natively — no build step).
 
 Everything below is copy-paste in order. Nothing here touches other sites on the box.
 
@@ -22,7 +22,7 @@ sudo -u chalk -H bash -c '
 '
 ```
 
-Upgrades later: `sudo -u chalk -H bash -c "cd /opt/chalk && git pull && npm ci --omit=dev"` then `sudo systemctl restart chalk chalk-watch`.
+Upgrades later: `sudo -u chalk -H bash -c "cd /opt/chalk && git pull && npm ci --omit=dev"` then `sudo systemctl restart chalk`.
 
 ## 2. Environment
 
@@ -32,36 +32,31 @@ sudo -u chalk chmod 600 /opt/chalk/.env
 sudoedit -u chalk /opt/chalk/.env      # set CHALK_LLM_KEY; optionally NEDB_TMK=$(openssl rand -hex 32)
 ```
 
-## 3. Services
+## 3. Data (first time, ~10 minutes total — run BEFORE starting the service; one engine per data dir)
 
 ```bash
-sudo cp /opt/chalk/deploy/nedbd-chalk.service /opt/chalk/deploy/chalk.service /opt/chalk/deploy/chalk-watch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now nedbd-chalk
-curl -s http://127.0.0.1:7070/health            # {"ok":true,"engine":"dag",...}
-```
-
-## 4. Data (first time, ~10 minutes total)
-
-```bash
-sudo -u chalk -H bash -c 'cd /opt/chalk && set -a && . ./.env && set +a && export NEDB_URL=http://127.0.0.1:7070 CHALK_AUTOSTART_NEDB=0 &&
+sudo -u chalk -H bash -c 'cd /opt/chalk && set -a && . ./.env && set +a &&
   node bin/chalk.ts ingest --season 2025 &&
   node bin/chalk.ts ingest --season 2025 --context-only &&
   node bin/chalk.ts ingest --season 2026 &&
   node bin/chalk.ts verify'
 ```
 
-Expect: 285 games / 48,771 plays; ~47k context rows; 272 scheduled 2026 games; `verify` → `ok: true, tamper_evident: true`.
+Expect: 285 games / 48,771 plays; ~47k context rows; 272 scheduled 2026 games; `verify` → `ok: true, tamper_evident: true`. Each command opens the embedded store, writes, flushes, exits.
 
-## 5. Serve + watch
+## 4. Serve (API + client + in-process watch loop)
 
 ```bash
-sudo systemctl enable --now chalk chalk-watch
-curl -s http://127.0.0.1:4040/api/v1/health     # chalk ok, nedb ok, llm has_key true
-journalctl -u chalk -f                          # "warmup: home TB 2025 ready in ...ms"
+sudo cp /opt/chalk/deploy/chalk.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now chalk
+curl -s http://127.0.0.1:4040/api/v1/health     # chalk ok, nedb embedded, llm has_key true
+journalctl -u chalk -f                          # "store: embedded NEDB at /opt/chalk/chalk-data", "warmup: home TB 2025 ready in ...ms", "watch 2026: ..."
 ```
 
-## 6. nginx + DNS
+While `chalk` runs it owns `/opt/chalk/chalk-data`; to run a CLI command against the data, `sudo systemctl stop chalk` first (or point the CLI at a copy).
+
+## 5. nginx + DNS
 
 ```bash
 sudo cp /opt/chalk/deploy/nginx.sports-rater.conf /etc/nginx/conf.d/sports-rater.conf   # or the Mail-in-a-Box custom hook
@@ -70,7 +65,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Cloudflare: `A sports-rater.com → <VPS IP>` (proxied), `CNAME www → sports-rater.com`. SSL mode Flexible to match the box today; Origin Cert + Full (Strict) is the queued hardening.
 
-## 7. Smoke test from outside
+## 6. Smoke test from outside
 
 ```bash
 curl -s https://sports-rater.com/api/v1/health | head -c 200
@@ -82,16 +77,16 @@ curl -sN -X POST https://sports-rater.com/api/v1/ask -H 'content-type: applicati
 
 | Need | Command |
 | --- | --- |
-| Logs | `journalctl -u chalk -f`, `journalctl -u chalk-watch -f`, `journalctl -u nedbd-chalk -f` |
+| Logs | `journalctl -u chalk -f` (API, watch ticks and the embedded engine all log here) |
 | Integrity | `curl -s http://127.0.0.1:4040/api/v1/verify` |
 | Ingest status | `curl -s http://127.0.0.1:4040/api/v1/ingest/status \| head -c 800` |
-| Force a re-ingest now | `sudo systemctl restart chalk-watch` (first tick is immediate) |
-| Backup | stop `nedbd-chalk`, tar `/opt/chalk/chalk-data`, start. Content-addressed and hash-chained; `verify` after restore. |
-| Game day | `chalk-watch` keeps polling; set `CHALK_WATCH_INTERVAL=600` in `.env` for 10-minute ticks and restart the unit. Premium TheSportsDB key in `.env` unlocks the live scoreboard path. |
+| Force a re-ingest now | `sudo systemctl restart chalk` (first watch tick is immediate) |
+| Backup | `sudo systemctl stop chalk`, tar `/opt/chalk/chalk-data`, start. Content-addressed and hash-chained; `chalk verify` after restore. |
+| Game day | the in-process watch keeps polling; set `CHALK_WATCH_INTERVAL=600` in `.env` for 10-minute ticks and restart `chalk`. Premium TheSportsDB key in `.env` unlocks the live scoreboard path. |
 
 ## Security posture
 
-- nedbd is loopback-only and can additionally require `NEDBD_TOKEN`; at-rest AES-256-GCM via `NEDB_TMK`.
+- NEDB runs inside the CHALK process; nothing listens but CHALK on loopback. (Daemon mode remains available via `NEDB_URL` for multi-process setups.)
 - CHALK has no accounts and stores no personal data: fan writes carry a client-computed hash + a nickname handle. Moderation, when needed, is a hide-by-hash list — nothing is deleted from the chain.
 - Rate limits: 20 fan writes burst per handle (1 per 10 s refill), 60 per address (1 per 5 s). nginx caps bodies at 64 KB.
 - The only paid dependency is optional (TheSportsDB Premium, ~$9/mo). Everything else is owned stack: NEDB, AiAS/PIN, this box.

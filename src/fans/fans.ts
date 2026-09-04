@@ -15,7 +15,8 @@
  */
 import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
-import { ChalkStore, nqlStr, type NedbRow } from "../store/nedb.ts";
+import { nqlStr, type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import type { FanIdentity } from "./identity.ts";
 
 export const SR = {
@@ -79,12 +80,12 @@ interface ChainTip {
   updated_at: string;
 }
 
-async function chainTip(store: ChalkStore, fan_id: string): Promise<NedbRow<ChainTip> | null> {
+async function chainTip(store: Store, fan_id: string): Promise<NedbRow<ChainTip> | null> {
   return store.get<ChainTip>(SR.chain_tips, fan_id);
 }
 
 /** Resolve the target record (any football_* or sr_* collection) to its current hash. */
-async function resolveTarget(store: ChalkStore, coll: string | null, id: string | null): Promise<{ hash: string | null; ok: boolean; error?: string }> {
+async function resolveTarget(store: Store, coll: string | null, id: string | null): Promise<{ hash: string | null; ok: boolean; error?: string }> {
   if (!coll || !id) return { hash: null, ok: true };
   if (!/^(football|sr)_[a-z_]+$/.test(coll)) return { hash: null, ok: false, error: `target_coll must be a football_* or sr_* collection` };
   const row = await store.get(coll, id);
@@ -92,7 +93,7 @@ async function resolveTarget(store: ChalkStore, coll: string | null, id: string 
   return { hash: row._hash, ok: true };
 }
 
-async function commit<T extends FanWrite>(store: ChalkStore, coll: string, id: string, doc: Omit<T, "prev" | "chain_index">, now: string): Promise<NedbRow<T>> {
+async function commit<T extends FanWrite>(store: Store, coll: string, id: string, doc: Omit<T, "prev" | "chain_index">, now: string): Promise<NedbRow<T>> {
   const tip = await chainTip(store, doc.fan_id);
   const full = { ...doc, prev: tip?.data.tip_hash ?? null, chain_index: (tip?.data.chain_length ?? 0) + 1 } as unknown as Record<string, unknown>;
   const causedBy = [doc.target_hash, tip?.data.tip_hash].filter((h): h is string => Boolean(h));
@@ -123,7 +124,7 @@ export function validateRate(input: unknown): { ok: boolean; value?: RateInput; 
   return { ok: true, value: { team: team!, season: season!, subject: subject!, score: score!, snapshot_id, chalk_score }, errors: [] };
 }
 
-export async function rate(store: ChalkStore, who: FanIdentity, r: RateInput, now = new Date().toISOString()): Promise<{ row: NedbRow<FanRating>; replaced: boolean }> {
+export async function rate(store: Store, who: FanIdentity, r: RateInput, now = new Date().toISOString()): Promise<{ row: NedbRow<FanRating>; replaced: boolean }> {
   const target = r.snapshot_id ? await resolveTarget(store, COLL.ratings, r.snapshot_id) : { hash: null, ok: true };
   if (!target.ok) throw new Error(target.error);
   const id = deterministicId("srr", { fan: who.fan_id, team: r.team, season: r.season, subject: r.subject });
@@ -150,7 +151,7 @@ export function validateReaction(input: unknown): { ok: boolean; value?: { targe
   return { ok: true, value: { target_coll, target_id, reaction: reaction! }, errors: [] };
 }
 
-export async function react(store: ChalkStore, who: FanIdentity, v: { target_coll: string; target_id: string; reaction: ReactionKind }, now = new Date().toISOString()): Promise<{ row: NedbRow<FanReaction>; replaced: boolean }> {
+export async function react(store: Store, who: FanIdentity, v: { target_coll: string; target_id: string; reaction: ReactionKind }, now = new Date().toISOString()): Promise<{ row: NedbRow<FanReaction>; replaced: boolean }> {
   const target = await resolveTarget(store, v.target_coll, v.target_id);
   if (!target.ok) throw new Error(target.error);
   const id = deterministicId("srx", { fan: who.fan_id, coll: v.target_coll, id: v.target_id });
@@ -179,7 +180,7 @@ export function validatePost(input: unknown): { ok: boolean; value?: { text: str
   return { ok: true, value: { text, team, game_id, target_coll, target_id }, errors: [] };
 }
 
-export async function post(store: ChalkStore, who: FanIdentity, v: { text: string; team: string | null; game_id: string | null; target_coll: string | null; target_id: string | null }, now = new Date().toISOString()): Promise<NedbRow<FanPost>> {
+export async function post(store: Store, who: FanIdentity, v: { text: string; team: string | null; game_id: string | null; target_coll: string | null; target_id: string | null }, now = new Date().toISOString()): Promise<NedbRow<FanPost>> {
   const target = await resolveTarget(store, v.target_coll, v.target_id);
   if (!target.ok) throw new Error(target.error);
   const id = deterministicId("srp", { fan: who.fan_id, text: v.text, at: now });
@@ -213,7 +214,7 @@ export interface FeedItem {
   reactions?: Record<ReactionKind, number>;
 }
 
-export async function feed(store: ChalkStore, opts: { team?: string; limit?: number; include?: Array<FeedItem["kind"]> } = {}): Promise<{ items: FeedItem[]; seq: number; head: string }> {
+export async function feed(store: Store, opts: { team?: string; limit?: number; include?: Array<FeedItem["kind"]> } = {}): Promise<{ items: FeedItem[]; seq: number; head: string }> {
   const include = new Set(opts.include ?? ["post", "rating"]);
   const items: FeedItem[] = [];
   let seq = 0, head = "";
@@ -262,7 +263,7 @@ export interface Consensus {
   distribution: Array<{ bucket: string; n: number }>;
 }
 
-export async function consensus(store: ChalkStore, team: string, season: number, subject: string, chalkScore: number | null): Promise<Consensus> {
+export async function consensus(store: Store, team: string, season: number, subject: string, chalkScore: number | null): Promise<Consensus> {
   const rows = await store.query<FanRating>(`FROM ${SR.ratings} WHERE team = ${nqlStr(team)} AND season = ${season} AND subject = ${nqlStr(subject)}`);
   const scores = rows.map((r) => r.data.score);
   const mean = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
@@ -276,7 +277,7 @@ export async function consensus(store: ChalkStore, team: string, season: number,
 export interface ChainLink { coll: string; id: string; hash: string; prev: string | null; chain_index: number; created_at: string; kind: string; ok: boolean }
 
 /** Walk a fan's chain from the tip back to their first write, verifying each prev link. */
-export async function fanChain(store: ChalkStore, fan_id: string, limit = 200): Promise<{ handle: string | null; length: number; verified: boolean; links: ChainLink[] }> {
+export async function fanChain(store: Store, fan_id: string, limit = 200): Promise<{ handle: string | null; length: number; verified: boolean; links: ChainLink[] }> {
   const tip = await chainTip(store, fan_id);
   if (!tip) return { handle: null, length: 0, verified: true, links: [] };
   // All of the fan's writes in one pass per collection, then follow prev.

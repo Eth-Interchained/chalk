@@ -14,7 +14,8 @@
 import type { MetricBundle } from "../engine/metrics.ts";
 import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
-import { ChalkStore, type NedbRow } from "../store/nedb.ts";
+import { type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import type { RatingDefinition, RatingSubject } from "./definitions.ts";
 import { percentileRank } from "./normalize.ts";
 
@@ -239,7 +240,7 @@ function ratio(a: number, b: number): string {
 // ------------------------------------------------------------- persistence
 
 export async function persistRating(
-  store: ChalkStore,
+  store: Store,
   snap: RatingSnapshot,
   causedBy: string[],
 ): Promise<{ row: NedbRow; cached: boolean }> {
@@ -252,7 +253,7 @@ export async function persistRating(
   return { row, cached: false };
 }
 
-export async function persistDefinition(store: ChalkStore, def: RatingDefinition): Promise<NedbRow> {
+export async function persistDefinition(store: Store, def: RatingDefinition): Promise<NedbRow> {
   const existing = await store.get<RatingDefinition>(COLL.rating_definitions, def.id);
   if (existing && JSON.stringify(existing.data.components) === JSON.stringify(def.components)) {
     return existing as unknown as NedbRow;

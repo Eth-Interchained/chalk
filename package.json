@@ -1,6 +1,6 @@
 {
   "name": "chalk-engine",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "CHALK — local-first football intelligence engine behind sports-rater.com. The database knows. Deterministic code calculates. The model interprets. Provenance proves.",
   "type": "module",
   "license": "BUSL-1.1",
@@ -8,7 +8,9 @@
   "bin": { "chalk": "./bin/chalk.ts" },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"tests/*.test.ts\"",
+    "test": "node --test \"tests/*.test.ts\" && CHALK_TEST_STORE=embedded node --test \"tests/*.test.ts\"",
+    "test:http": "node --test \"tests/*.test.ts\"",
+    "test:embedded": "CHALK_TEST_STORE=embedded node --test \"tests/*.test.ts\"",
     "ingest": "node bin/chalk.ts ingest",
     "serve": "node bin/chalk.ts serve"
   },

@@ -19,7 +19,8 @@ import { leagueThirdDown, rateThirdDown, type RateResult } from "../rating/leagu
 import { rateSubject } from "../rating/rank.ts";
 import { opponentReport } from "../engine/opponent.ts";
 import { COLL } from "../store/collections.ts";
-import { ChalkStore, nqlStr, type NedbRow } from "../store/nedb.ts";
+import { nqlStr, type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import { summarizeRating } from "./intents.ts";
 
 export function baseFilter(team: string, season: number, side: "offense" | "defense" = "offense"): SituationFilter {
@@ -27,14 +28,14 @@ export function baseFilter(team: string, season: number, side: "offense" | "defe
 }
 
 /** All context rows (cached by the store's NQL cache); filtered in memory. */
-export async function loadContext(store: ChalkStore, gameIds?: Set<string>): Promise<Map<string, PlayContext>> {
+export async function loadContext(store: Store, gameIds?: Set<string>): Promise<Map<string, PlayContext>> {
   const rows = await store.query<PlayContext>(`FROM ${PLAY_CONTEXT}`);
   const m = new Map<string, PlayContext>();
   for (const r of rows) if (!gameIds || gameIds.has(r.data.game_id)) m.set(r.data.id, r.data);
   return m;
 }
 
-export async function leagueBadgePopulation(store: ChalkStore, season: number, side: "offense" | "defense", log: (l: string) => void): Promise<BadgePopulationMember[]> {
+export async function leagueBadgePopulation(store: Store, season: number, side: "offense" | "defense", log: (l: string) => void): Promise<BadgePopulationMember[]> {
   const league = await leagueThirdDown(store, season, side, log);
   const all = await store.queryAt<Play>(`FROM ${COLL.plays} WHERE season = ${season}`);
   const teamField = side === "offense" ? "posteam" : "defteam";
@@ -73,7 +74,7 @@ export interface HomePayload {
   computed_at: { seq: number; head: string };
 }
 
-export async function buildHome(store: ChalkStore, team: string, season: number, def: RatingDefinition = THIRD_DOWN_DEFAULT_V1, log: (l: string) => void = () => {}): Promise<HomePayload> {
+export async function buildHome(store: Store, team: string, season: number, def: RatingDefinition = THIRD_DOWN_DEFAULT_V1, log: (l: string) => void = () => {}): Promise<HomePayload> {
   const t0 = Date.now();
   const league = await leagueThirdDown(store, season, "offense", log);
   const rating: RateResult | null = await rateThirdDown(store, team, season, def, "offense", log);
@@ -184,7 +185,7 @@ export async function buildHome(store: ChalkStore, team: string, season: number,
   };
 }
 
-export async function nextOpponent(store: ChalkStore, team: string): Promise<string | null> {
+export async function nextOpponent(store: Store, team: string): Promise<string | null> {
   const games = (await store.query<Game>(`FROM ${COLL.games}`)).map((g) => g.data).filter((g) => (g.home_team === team || g.away_team === team) && g.home_score === null && g.gameday && Date.parse(g.gameday) >= Date.now() - 86400e3).sort((a, b) => (a.gameday ?? "").localeCompare(b.gameday ?? ""));
   const g = games[0];
   if (g) return g.home_team === team ? g.away_team : g.home_team;
@@ -193,7 +194,7 @@ export async function nextOpponent(store: ChalkStore, team: string): Promise<str
 }
 
 /** Plays for a team-season with their context rows joined, for tendency/opponent intents. */
-export async function loadTeamPlaysWithContext(store: ChalkStore, f: SituationFilter): Promise<{ rows: NedbRow<Play>[]; ctx: Map<string, PlayContext>; seq: number; head: string }> {
+export async function loadTeamPlaysWithContext(store: Store, f: SituationFilter): Promise<{ rows: NedbRow<Play>[]; ctx: Map<string, PlayContext>; seq: number; head: string }> {
   const { rows, seq, head } = await store.queryAt<Play>(compileNql(f));
   const games = new Set(rows.map((r) => r.data.game_id));
   const ctx = await loadContext(store, games);

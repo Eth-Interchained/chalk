@@ -19,7 +19,7 @@ question
 
 No computer vision. No hosted database. No model doing arithmetic.
 
-## What runs today (v0.5.0)
+## What runs today (v0.6.0)
 
 | Layer | What it does |
 | --- | --- |
@@ -32,7 +32,7 @@ No computer vision. No hosted database. No model doing arithmetic.
 | `src/fans/` | **Sports-Rater fan layer** — no accounts: nickname + a device-held salt → sha256 → `nick#xxxxxx` with a deterministic identicon. Fan ratings, reactions and takes are NEDB writes `caused_by` the CHALK record they react to and chained per fan by previous hash; feed newest-first; fan consensus vs CHALK; chain walk with link verification; token-bucket anti-spam. |
 | `web/` | **Sports-Rater Home**: team-colored hero with badges, rating ring, trend sparkline, recent form, last game with deviation, next up with opponent snapshot and *Scout them*, weak spots that ask on tap; ask bar, streamed answers, evidence drawer (tap a play to ask about it), coach view, *rate differently*, league table, provenance viewer. |
 
-Everything lives in **one NEDB database** (`chalk`) on a `nedbd` daemon. NEDB is the truth, history and provenance layer — not a cache.
+Everything lives in **one NEDB database**, **embedded in the CHALK process** by default (the napi engine from `nedb-engine`, data at `./chalk-data`) — no daemon. Set `NEDB_URL` (or `CHALK_STORE=http`) to talk to a `nedbd` daemon instead; both stores implement the same `Store` interface and the whole test suite runs against both. NEDB is the truth, history and provenance layer — not a cache.
 
 ## Quick start
 
@@ -47,7 +47,14 @@ npx chalk rate --team TB --season 2025  # Third Down Rating with formula, popula
 npx chalk serve --port 4040             # open http://127.0.0.1:4040
 ```
 
-`chalk serve` and `chalk ingest` autostart the `nedbd-v2` binary bundled in the `nedb-engine` npm package at `./chalk-data` when nothing answers at `NEDB_URL` (default `http://127.0.0.1:7070`). Point `NEDB_URL` at your own daemon to skip that.
+### Store
+
+| Mode | When | How |
+| --- | --- | --- |
+| **embedded** (default) | one process owns the data | napi `NedbCore` in-process at `CHALK_DATA` (default `./chalk-data`), v3 segment layout pinned. One engine per directory — the core holds an exclusive lock and refuses a second opener. `chalk serve` runs the watch loop in-process (`CHALK_WATCH_SEASON`). Stop the server before running CLI commands against the same dir. |
+| **http** | several processes, or a remote store | `NEDB_URL=http://127.0.0.1:7070` (or `CHALK_STORE=http`). Autostarts the bundled `nedbd-v2` on loopback when nothing answers unless `CHALK_AUTOSTART_NEDB=0`. `chalk watch` may run as its own process here. |
+
+Same NQL, same hashes, same `TRACE`; `npm test` runs every integration test against both.
 
 ### Model
 
@@ -83,7 +90,7 @@ chalk pulse [--watch] [--interval 120]
 chalk watch --season 2026 [--interval 1800]      # re-ingest + pulse on a cadence (the only polling loop)
 chalk rankings --season 2025 [--definition offense_default@1.0.0]
 chalk verify
-chalk serve [--port 4040] [--host 127.0.0.1]
+chalk serve [--port 4040] [--host 127.0.0.1] [--watch-season 2026 --watch-interval 1800]
 ```
 
 ## API
@@ -147,7 +154,7 @@ Every snapshot records population, weights, raw and normalized values, points pe
 
 ```bash
 npm run typecheck
-npm test              # node --test — 55 tests: engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
+npm test              # node --test — 55 tests, run twice: HTTP store (nedbd --memory) and embedded store (in-process): engine, rating, planner, context/trend/badges/opponent unit tests + ingest/pulse/rating integration against a real in-memory nedbd
 ```
 
 The frozen fixture is the real game `2025_18_CAR_TB` (159 plays as returned by NFLData on 2026-09-03). Ground truth asserted exactly: TB 8-of-15 on third down, 2-of-7 on third-and-long, CAR 1-of-8. The model is never required for analytics tests.

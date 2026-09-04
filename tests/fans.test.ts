@@ -1,26 +1,18 @@
-import { test, before, after } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
-import { ChalkStore, resolveNedbdBinary } from "../src/store/nedb.ts";
+import type { Store } from "../src/store/nedb.ts";
+import { makeTestStore, STORE_KIND } from "./stores.ts";
 import { deriveFanId, handleFor, verifyIdentity, identiconSvg, RateLimiter } from "../src/fans/identity.ts";
 import { rate, react, post, feed, consensus, fanChain, validateRate, validateReaction, validatePost, SR } from "../src/fans/fans.ts";
 import { COLL } from "../src/store/collections.ts";
 
-const bin = resolveNedbdBinary();
-const port = 18000 + Math.floor(Math.random() * 1000);
-let child: ChildProcess | null = null;
-let store: ChalkStore;
-const skip = bin ? false : `nedbd-v2 binary not available for ${process.platform}/${process.arch}`;
+// Resolved at module load so node:test sees the real skip reason at registration time.
+const ts = await makeTestStore("sr_test");
+const skip: string | false = ts.skip;
+const store: Store = ts.store;
+if (skip) console.log(`[sr_test] skipping integration tests on ${STORE_KIND} store: ${skip}`);
 
-before(async () => {
-  if (!bin) return;
-  child = spawn(bin, ["--memory", "--host", "127.0.0.1", "--port", String(port)], { stdio: ["ignore", "pipe", "pipe"] });
-  store = new ChalkStore({ url: `http://127.0.0.1:${port}`, db: "sr_test" });
-  const deadline = Date.now() + 15000;
-  while (Date.now() < deadline) { if (await store.ping()) return; await new Promise((r) => setTimeout(r, 150)); }
-  throw new Error("nedbd did not start");
-});
-after(() => child?.kill("SIGTERM"));
+after(() => ts?.stop());
 
 test("identity: derivation, handle, verification, identicon determinism", () => {
   const id = deriveFanId("dad", "s3cret-salt");

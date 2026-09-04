@@ -15,7 +15,8 @@ import { analyzeThirdDown, thirdDownFilter, THIRD_DOWN_ALGORITHM, THIRD_DOWN_VER
 import { compileLeagueNql } from "../engine/situation.ts";
 import type { Play } from "../model/football.ts";
 import { COLL } from "../store/collections.ts";
-import { ChalkStore, type NedbRow } from "../store/nedb.ts";
+import { type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import { BUILTIN_DEFINITIONS, type RatingDefinition } from "./definitions.ts";
 import { computeRating, explainDisagreement, persistDefinition, persistRating, type Disagreement, type PopulationMember, type RatingSnapshot } from "./rating.ts";
 
@@ -32,7 +33,7 @@ export interface LeagueThirdDown {
 const leagueCache = new Map<string, { at: number; value: LeagueThirdDown }>();
 const LEAGUE_CACHE_MS = 60_000;
 
-export async function leagueThirdDown(store: ChalkStore, season: number, side: "offense" | "defense", log: (l: string) => void = () => {}): Promise<LeagueThirdDown> {
+export async function leagueThirdDown(store: Store, season: number, side: "offense" | "defense", log: (l: string) => void = () => {}): Promise<LeagueThirdDown> {
   const key = `${season}:${side}`;
   const hit = leagueCache.get(key);
   if (hit && Date.now() - hit.at < LEAGUE_CACHE_MS) return hit.value;
@@ -63,7 +64,7 @@ export function invalidateLeagueCache(): void {
   leagueCache.clear();
 }
 
-export async function persistAnalysis(store: ChalkStore, a: ThirdDownAnalysis): Promise<NedbRow> {
+export async function persistAnalysis(store: Store, a: ThirdDownAnalysis): Promise<NedbRow> {
   const existing = await store.get(COLL.analyses, a.id);
   if (existing) return existing;
   return store.put(COLL.analyses, a.id, a as unknown as Record<string, unknown>, {
@@ -72,14 +73,14 @@ export async function persistAnalysis(store: ChalkStore, a: ThirdDownAnalysis): 
   });
 }
 
-export async function loadDefinition(store: ChalkStore, id: string): Promise<RatingDefinition | null> {
+export async function loadDefinition(store: Store, id: string): Promise<RatingDefinition | null> {
   const builtin = BUILTIN_DEFINITIONS.find((d) => d.id === id);
   if (builtin) return builtin;
   const row = await store.get<RatingDefinition>(COLL.rating_definitions, id);
   return row ? row.data : null;
 }
 
-export async function listDefinitions(store: ChalkStore): Promise<RatingDefinition[]> {
+export async function listDefinitions(store: Store): Promise<RatingDefinition[]> {
   const rows = await store.query<RatingDefinition>(`FROM ${COLL.rating_definitions}`);
   const custom = rows.map((r) => r.data).filter((d) => !BUILTIN_DEFINITIONS.some((b) => b.id === d.id));
   return [...BUILTIN_DEFINITIONS, ...custom];
@@ -98,7 +99,7 @@ export interface RateResult {
 }
 
 export async function rateThirdDown(
-  store: ChalkStore,
+  store: Store,
   team: string,
   season: number,
   def: RatingDefinition,
@@ -127,7 +128,7 @@ export async function rateThirdDown(
 }
 
 export async function compareDefinitions(
-  store: ChalkStore,
+  store: Store,
   team: string,
   season: number,
   a: RatingDefinition,

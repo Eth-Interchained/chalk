@@ -12,7 +12,7 @@
 import { extractBlocks } from "sentinel-blocks";
 import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
-import type { ChalkStore } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import { validateFilter, type SituationFilter } from "../engine/situation.ts";
 import { complete, LlmError, type LlmConfig } from "./client.ts";
 import { PLANNER_SYSTEM, PLANNER_USER_SUFFIX, PROMPT_VERSION } from "./prompts.ts";
@@ -75,7 +75,7 @@ export async function planQuestion(
   question: string,
   ctx: PlanContext,
   cfg: LlmConfig | null,
-  store: ChalkStore | null,
+  store: Store | null,
   log: (l: string) => void = () => {},
 ): Promise<PlanOutcome> {
   const started = Date.now();

@@ -14,7 +14,8 @@
  */
 import { COLL } from "../store/collections.ts";
 import { deterministicId, hashPayload } from "../store/hash.ts";
-import { ChalkStore, nqlStr, type NedbRow } from "../store/nedb.ts";
+import { nqlStr, type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import type { PulseSource, PulseGameState } from "../source/pulse.ts";
 import type { SourceRecord } from "../source/types.ts";
 import type { Game } from "../model/football.ts";
@@ -57,7 +58,7 @@ export interface PulseTickResult {
 }
 
 export async function pulseTick(opts: {
-  store: ChalkStore;
+  store: Store;
   source: PulseSource;
   /** Known NFLData games for matching (season -> games). Optional. */
   knownGames?: Game[];
@@ -222,7 +223,7 @@ export function matchGame(gs: PulseGameState, games: Game[]): string | null {
 
 /** Cadence loop; the ONLY place polling exists (V3 §20). */
 export async function pulseLoop(opts: {
-  store: ChalkStore;
+  store: Store;
   source: PulseSource;
   intervalMs: number;
   knownGames?: () => Promise<Game[]>;

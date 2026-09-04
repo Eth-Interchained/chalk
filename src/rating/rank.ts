@@ -11,7 +11,7 @@
 import { compileLeagueNql } from "../engine/situation.ts";
 import type { Game, Play } from "../model/football.ts";
 import { COLL } from "../store/collections.ts";
-import type { ChalkStore, NedbRow } from "../store/nedb.ts";
+import type { Store, NedbRow } from "../store/nedb.ts";
 import type { RatingDefinition } from "./definitions.ts";
 import { leagueThirdDown, rateThirdDown, type RateResult } from "./league.ts";
 import { computeRating, persistDefinition, persistRating, type PopulationMember, type RatingSnapshot } from "./rating.ts";
@@ -24,7 +24,7 @@ export function invalidateProfileCache(): void {
   profileCache.clear();
 }
 
-export async function leagueProfilesFor(store: ChalkStore, season: number, side: "offense" | "defense", log: (l: string) => void = () => {}) {
+export async function leagueProfilesFor(store: Store, season: number, side: "offense" | "defense", log: (l: string) => void = () => {}) {
   const key = `${season}:${side}`;
   const hit = profileCache.get(key);
   if (hit && Date.now() - hit.at < PROFILE_CACHE_MS) return hit;
@@ -58,7 +58,7 @@ export interface SubjectRateResult {
   cached: boolean;
 }
 
-export async function rateSubject(store: ChalkStore, team: string, season: number, def: RatingDefinition, log: (l: string) => void = () => {}): Promise<SubjectRateResult | null> {
+export async function rateSubject(store: Store, team: string, season: number, def: RatingDefinition, log: (l: string) => void = () => {}): Promise<SubjectRateResult | null> {
   if (def.subject === "third_down") {
     const r: RateResult | null = await rateThirdDown(store, team, season, def, "offense", log);
     if (!r) return null;
@@ -100,7 +100,7 @@ export interface Rankings {
   computed_at: { seq: number; head: string };
 }
 
-export async function rankings(store: ChalkStore, season: number, def: RatingDefinition, log: (l: string) => void = () => {}): Promise<Rankings> {
+export async function rankings(store: Store, season: number, def: RatingDefinition, log: (l: string) => void = () => {}): Promise<Rankings> {
   const side = def.subject === "defense" ? "defense" : "offense";
   const window = { season, description: `${season} as ingested (${side})` };
   let rows: NedbRow<Play>[];

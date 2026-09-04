@@ -21,7 +21,8 @@
  */
 import { COLL } from "../store/collections.ts";
 import { hashPayload, deterministicId } from "../store/hash.ts";
-import { ChalkStore, nqlStr, type NedbRow } from "../store/nedb.ts";
+import { nqlStr, type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import type { FootballSource, SourceRecord } from "../source/types.ts";
 import type { Game, Play } from "../model/football.ts";
 import {
@@ -87,7 +88,7 @@ export interface IngestScope {
 }
 
 export interface IngestOptions {
-  store: ChalkStore;
+  store: Store;
   source: FootballSource;
   scope: IngestScope;
   log?: (line: string) => void;
@@ -233,7 +234,7 @@ export const INDEXES: Array<{ coll: string; field: string }> = [
   { coll: COLL.games, field: "season" },
 ];
 
-export async function ensureIndexes(store: ChalkStore, log: (l: string) => void = () => {}): Promise<void> {
+export async function ensureIndexes(store: Store, log: (l: string) => void = () => {}): Promise<void> {
   for (const ix of INDEXES) {
     try {
       await store.client.createIndex(ix.coll, ix.field, "eq");
@@ -251,7 +252,7 @@ export function rawId(rec: Pick<SourceRecord, "source" | "endpoint" | "recordId"
 
 /** Single-record raw upsert (games, deep collections). */
 async function upsertRaw(
-  store: ChalkStore,
+  store: Store,
   coll: string,
   rec: SourceRecord,
   counters: IngestCounters,
@@ -264,7 +265,7 @@ async function upsertRaw(
 }
 
 async function decideAndWriteRaw(
-  store: ChalkStore,
+  store: Store,
   coll: string,
   id: string,
   rec: SourceRecord,
@@ -300,7 +301,7 @@ async function decideAndWriteRaw(
 }
 
 async function recordSourceChange(
-  store: ChalkStore,
+  store: Store,
   coll: string,
   rawIdStr: string,
   before: NedbRow<RawDoc>,
@@ -346,7 +347,7 @@ export function diffKeys(a: unknown, b: unknown): string[] {
 // ---------------------------------------------------------------- normalized
 
 async function upsertNormalized(
-  store: ChalkStore,
+  store: Store,
   coll: string,
   id: string,
   doc: Record<string, unknown>,
@@ -375,7 +376,7 @@ async function upsertNormalized(
  * one football_play_context row per play id, derived_from both raw hashes.
  */
 async function ingestContextForGame(
-  store: ChalkStore,
+  store: Store,
   source: FootballSource,
   gameId: string,
   counters: IngestCounters,
@@ -464,7 +465,7 @@ async function ingestContextForGame(
  * game (two NQL queries), decides per play, then batch-writes.
  */
 async function ingestPlaysForGame(
-  store: ChalkStore,
+  store: Store,
   gameId: string,
   fetched: SourceRecord[],
   game: Game,
