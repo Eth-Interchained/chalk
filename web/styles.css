@@ -326,3 +326,28 @@ main.view-feed #home { display: none; }
 .tbl { position: relative; }
 .tbl::after { content: ""; position: absolute; top: 0; right: 0; bottom: 8px; width: 28px; background: linear-gradient(90deg, transparent, var(--bg-2)); pointer-events: none; border-radius: 0 12px 12px 0; }
 .tbl table { min-width: 100%; white-space: nowrap; }
+
+/* ---------------- team hero (full-bleed, half-screen, bevelled, cut by the dashboard) ---------------- */
+.team-hero { position: relative; width: 100vw; margin-left: calc(50% - 50vw); height: 50vh; min-height: 260px; max-height: 560px; margin-top: -4px; margin-bottom: calc(-25vh + 10px); z-index: 0; pointer-events: none; }
+.team-hero-frame { position: absolute; inset: 0 0 0 0; overflow: hidden;
+  /* gradient stroke: accent -> transparent -> accent, drawn by the frame's padding */
+  padding: 2px; background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 85%, white 10%), color-mix(in srgb, var(--accent) 25%, transparent) 40%, color-mix(in srgb, var(--accent) 25%, transparent) 60%, color-mix(in srgb, var(--accent) 85%, white 10%));
+  /* bevel / emboss: light top-left lip, dark bottom-right lip, soft drop */
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -2px 0 rgba(0,0,0,.65), 0 18px 48px rgba(0,0,0,.55);
+  border-radius: 0 0 28px 28px; }
+.team-hero-img { position: absolute; inset: 2px; border-radius: 0 0 26px 26px; background-size: cover; background-position: center 35%; opacity: 0; transition: opacity .9s ease; filter: saturate(1.05) contrast(1.02); transform: scale(1.02); }
+.team-hero-img.on { opacity: 1; }
+.team-hero-vignette { position: absolute; inset: 2px; border-radius: 0 0 26px 26px;
+  background:
+    linear-gradient(180deg, rgba(7,9,13,.55) 0%, rgba(7,9,13,0) 22%, rgba(7,9,13,0) 45%, rgba(7,9,13,.92) 100%),
+    radial-gradient(120% 80% at 50% 30%, transparent 55%, rgba(7,9,13,.5) 100%);
+  box-shadow: inset 0 2px 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(255,255,255,.04); }
+/* gradient fallback when no image has loaded */
+.team-hero:not(.has-img) .team-hero-frame::after { content: ""; position: absolute; inset: 2px; border-radius: 0 0 26px 26px; background: radial-gradient(80% 90% at 50% 100%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%), linear-gradient(180deg, var(--bg-3), var(--bg)); }
+/* the dashboard rises over the hero's lower half */
+#home { position: relative; z-index: 1; }
+#home .hero { padding-top: 18px; }
+#home .hero-rating, #home .rt, #home .tile { box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+main.view-feed .team-hero { display: none; }
+.mode-coach .team-hero { height: 36vh; margin-bottom: calc(-18vh + 10px); }
+@media (max-width: 640px) { .team-hero { height: 40vh; margin-bottom: calc(-20vh + 10px); } }

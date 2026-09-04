@@ -36,6 +36,19 @@ function logoImg(abbr, cls = "logo") {
   if (!u) return "";
   return `<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" decoding="async" onerror="this.remove()" />`;
 }
+// Team hero: /hero/{abbr}.jpg — generated field atmosphere in the team's palette (no logos/marks; we own them).
+// Two stacked layers crossfade so a team switch never flashes; a missing file leaves the gradient fallback.
+let heroFront = "a";
+function setHero(t) {
+  const front = $(`#team-hero-${heroFront}`), backId = heroFront === "a" ? "b" : "a", back = $(`#team-hero-${backId}`);
+  if (!front || !back) return;
+  const url = `/hero/${encodeURIComponent(String(t).toUpperCase())}.jpg`;
+  if (front.dataset.team === t) return;
+  const img = new Image();
+  img.onload = () => { back.style.backgroundImage = `url("${url}")`; back.dataset.team = t; back.classList.add("on"); front.classList.remove("on"); heroFront = backId; $("#team-hero").classList.add("has-img"); };
+  img.onerror = () => { console.warn(`hero: no image for ${t} — gradient fallback`); front.classList.remove("on"); $("#team-hero").classList.remove("has-img"); };
+  img.src = url;
+}
 function applyTeamTheme(t) {
   const c = TEAMS[t]?.[1] ?? "#c8ff3d";
   document.documentElement.style.setProperty("--accent", c);
@@ -207,6 +220,7 @@ function renderSiteFoot() {
 let homeRefreshAttempts = 0;
 async function loadHome(defId) {
   applyTeamTheme(state.team);
+  setHero(state.team);
   $("#home").classList.add("loading");
   $("#ring").classList.add("loading");
   $("#h-abbr").textContent = state.team;
