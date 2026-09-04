@@ -5,6 +5,12 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.1 · the fan chain verifies across replaced writes
+
+- **Leftover from v0.11.0** (picked up per Mark's rhythm: directive first, then the queue). Since v0.4.0 the chain walker indexed only current versions, so any replaced write (re-rate, re-pick, changed favorite, re-hype) left `prev` citing a superseded hash → `verified: false`, and the v0.4.0 test encoded that as expected behaviour.
+- **Fix:** on the first unresolved hash the walker pulls each of the fan's current docs through `store.trace(coll, id)` — prior versions of the same id are part of a TRACE answer — and indexes those versions too (filtered to the fan's own writes). Lazy: fans who never replaced anything pay nothing. Chains now verify end to end on both stores; the two chain tests assert `verified: true` and every link `ok`.
+- Tests: 101/101 both stores. Live on the local store: see PR.
+
 ## 2026-09-04 — v0.12.0 · the headline sharecard
 
 - **Mark:** "make the headline sharecard! Thats the next unlock branded with team hero and logo and everything stats on the card ready to share copyable and open social link on click? X, insta, facebook, etc?"
