@@ -631,7 +631,9 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     }
     try {
       const data = await readFile(file);
-      res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream", "cache-control": file.endsWith("index.html") ? "no-cache" : "public, max-age=300" });
+      // index.html, app.js and styles.css revalidate on every load (ETag-less, tiny files): a deploy must never leave a browser running last week's client. Images/fonts keep a short cache.
+      const revalidate = /\.(html|js|css)$/.test(file);
+      res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream", "cache-control": revalidate ? "no-cache" : "public, max-age=300" });
       res.end(data);
     } catch (e) {
       throw new HttpError(404, `static file not found: ${rel} (${(e as Error).message})`);

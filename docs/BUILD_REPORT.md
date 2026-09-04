@@ -4,6 +4,18 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.7.5 · Coach mode blanked the page (body matched `.coach { display:none }`); dead mode button; client guards
+
+### SHIPPED
+- **Mark:** tapping the Fan/Coach toggle → URL gains `mode=coach`, screen goes black, no server error. Reproduced in a real browser against sports-rater.com: DOM fully populated (ring 66, 9 tiles, 6 rating cards, 5 history cards), screenshot solid #07090d, computed `body { display: none }`. Root cause: `applyMode` toggles class `coach` on `<body>`; `styles.css` had a bare `.coach { display: none }` intended for the coach-view box inside answer cards. Present since the toggle was added — every Coach-mode use ever hid the page. Fix: rule scoped to `.card .coach`; body class renamed `mode-coach`.
+- Second live-reproduced bug: `Uncaught TypeError: history.replaceState is not a function` on every team/season/mode change — v0.7.2 declared a module-level `const history = {…}` for feed pagination, shadowing `window.history`. Renamed `hist`.
+- Guards: `boot().catch` renders a visible failure card instead of a dark shell; `tests/client_static.test.ts` fails the build on any module-level declaration shadowing a window global and on any bare class selector that could hide `<body>`; `index.html`/`app.js`/`styles.css` now served `cache-control: no-cache` so a deploy can never leave a browser on last week's client.
+
+### VERIFIED ON THE REAL SYSTEM
+- Live site: removing the class in the browser flips `body` from `display: none` to `block` and the page paints — causal chain confirmed before the fix shipped. After Mark pulls: toggle Coach → page stays, URL updates, no console error.
+
+---
+
 ## 2026-09-04 — v0.7.4 · badge taps always plan; rating subject aliases repaired; rule planner never throws
 
 ### SHIPPED
