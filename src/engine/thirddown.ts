@@ -15,7 +15,8 @@
 import type { DistanceBucket, Play } from "../model/football.ts";
 import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
-import { ChalkStore, type NedbRow } from "../store/nedb.ts";
+import { type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import {
   computeMetrics,
   confidenceFor,
@@ -228,7 +229,7 @@ export function analyzeThirdDown(
 
 /** Fetch candidates from NEDB, analyze, persist (idempotent by content id). */
 export async function runThirdDown(
-  store: ChalkStore,
+  store: Store,
   input: ThirdDownInput,
   opts: { persist?: boolean; log?: (l: string) => void } = {},
 ): Promise<{ analysis: ThirdDownAnalysis; plays: NedbRow<Play>[]; stored: NedbRow | null; cached: boolean; nql: string }> {

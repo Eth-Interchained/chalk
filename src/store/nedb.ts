@@ -46,6 +46,37 @@ export interface StoreOptions {
 export const DEFAULT_NEDB_URL = "http://127.0.0.1:7070";
 export const DEFAULT_DB = "chalk";
 
+/**
+ * The store surface every engine depends on. Two implementations:
+ *   ChalkStore    — HTTP client to a nedbd daemon (NEDB_URL)
+ *   EmbeddedStore — in-process napi NedbCore (CHALK_DATA), the default
+ * Same NQL, same hashes, same TRACE.
+ */
+export interface Store {
+  readonly url: string;
+  readonly db: string;
+  cacheTtlMs: number;
+  onCacheHit: ((info: { nql: string; ageMs: number; rows: number }) => void) | null;
+  invalidateCache(): void;
+  put<T extends Record<string, unknown>>(coll: string, id: string, doc: T, lineage?: Lineage): Promise<NedbRow<T>>;
+  get<T = Record<string, unknown>>(coll: string, id: string): Promise<NedbRow<T> | null>;
+  query<T = Record<string, unknown>>(nql: string): Promise<NedbRow<T>[]>;
+  queryAt<T = Record<string, unknown>>(nql: string): Promise<{ rows: NedbRow<T>[]; seq: number; head: string }>;
+  batchPut(ops: Array<{ coll: string; id: string; doc: Record<string, unknown>; causedBy?: string[] }>, chunk?: number): Promise<{ written: number; errors: Array<{ id: string; error: string }>; seq: number; head: string; hashes: Map<string, string> }>;
+  head(): Promise<string>;
+  seq(): Promise<number>;
+  verify(): Promise<{ ok: boolean; seq: number; head: string; tamper_evident: boolean; objects_checked: number; tampered: string[] }>;
+  health(): Promise<{ ok: boolean }>;
+  ping(): Promise<boolean>;
+  ensureDatabase(): Promise<void>;
+  trace(coll: string, id: string, reverse?: boolean): Promise<NedbRow[]>;
+  readonly client: {
+    createIndex(coll: string, field: string, kind?: "sorted" | "eq"): Promise<{ ok: boolean }>;
+    queryFull(nql: string): Promise<{ rows: Record<string, unknown>[]; count: number; seq: number; head: string }>;
+    listDatabases(): Promise<string[]>;
+  };
+}
+
 /** Escape a string for use as an NQL literal. */
 export function nqlStr(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;

@@ -14,7 +14,8 @@
  *      CHALK_LLM_* (see src/llm/client.ts), CHALK_DEFAULT_TEAM (TB), CHALK_DEFAULT_SEASON.
  */
 import path from "node:path";
-import { ChalkStore, DEFAULT_NEDB_URL, DEFAULT_DB, ensureNedbd } from "../src/store/nedb.ts";
+import { ChalkStore, type Store, DEFAULT_NEDB_URL, DEFAULT_DB, ensureNedbd } from "../src/store/nedb.ts";
+import { EmbeddedStore } from "../src/store/embedded.ts";
 import { NFLDataSource } from "../src/source/nfldata.ts";
 import { ingest } from "../src/ingest/ingest.ts";
 import { runThirdDown, summarizeThirdDown } from "../src/engine/thirddown.ts";
@@ -51,13 +52,37 @@ function parseFlags(args: string[]): Record<string, string | boolean> {
 const str = (k: string, dflt?: string) => (typeof flags[k] === "string" ? (flags[k] as string) : dflt);
 const num = (k: string, dflt?: number) => (typeof flags[k] === "string" ? Number(flags[k]) : dflt);
 
-async function boot(): Promise<{ store: ChalkStore; stop: () => void }> {
-  const url = process.env.NEDB_URL ?? DEFAULT_NEDB_URL;
+/**
+ * Store selection:
+ *   CHALK_STORE=embedded (default)  NEDB in-process via the napi engine at CHALK_DATA (./chalk-data).
+ *                                   One engine per data dir: the process that opens it owns it.
+ *   CHALK_STORE=http, or NEDB_URL   talk to a nedbd daemon (autostarts the bundled binary on loopback
+ *   set                             when nothing answers, unless CHALK_AUTOSTART_NEDB=0).
+ */
+async function boot(): Promise<{ store: Store; stop: () => void; mode: "embedded" | "http" }> {
+  const mode = (process.env.CHALK_STORE ?? (process.env.NEDB_URL ? "http" : "embedded")) as "embedded" | "http";
   const dataDir = path.resolve(process.env.CHALK_DATA ?? "./chalk-data");
+  if (mode === "embedded") {
+    let store: EmbeddedStore;
+    try {
+      store = EmbeddedStore.open(dataDir, process.env.NEDB_DB ?? DEFAULT_DB);
+    } catch (e) {
+      throw new Error(
+        `could not open the embedded NEDB at ${dataDir}: ${(e as Error).message}\n` +
+          `  If \`chalk serve\` (or a nedbd) already holds this directory, stop it first — one engine per data dir.\n` +
+          `  To use a daemon instead: NEDB_URL=http://127.0.0.1:7070 (or CHALK_STORE=http).`,
+      );
+    }
+    log(`store: embedded NEDB at ${dataDir}`);
+    return { store, mode, stop: () => store.close() };
+  }
+  const url = process.env.NEDB_URL ?? DEFAULT_NEDB_URL;
   const local = await ensureNedbd({ url, dataDir, log, autostart: process.env.CHALK_AUTOSTART_NEDB !== "0" });
   const store = new ChalkStore({ url, db: process.env.NEDB_DB ?? DEFAULT_DB, token: process.env.NEDBD_TOKEN || undefined });
+  log(`store: nedbd over HTTP at ${url}`);
   return {
     store,
+    mode,
     stop: () => {
       if (local.child) {
         log("stopping autostarted nedbd");
@@ -65,6 +90,27 @@ async function boot(): Promise<{ store: ChalkStore; stop: () => void }> {
       }
     },
   };
+}
+
+/** In-process watch: re-ingest a season (idempotent) + pulse tick on a cadence. The only polling loop. */
+function startWatchLoop(store: Store, season: number, intervalS: number, deep: boolean, signal: AbortSignal): void {
+  const source = new NFLDataSource({ onRequest: (i) => { if (i.status !== 200) log(`  watch HTTP ${i.status} ${i.url}`); } });
+  const pulse = new TheSportsDBSource({});
+  (async () => {
+    while (!signal.aborted) {
+      const t0 = Date.now();
+      try {
+        const r = await ingest({ store, source, scope: { season, deep }, log: () => {} });
+        const knownGames = (await store.query<Game>(`FROM ${COLL.games}`)).map((g) => g.data);
+        const pt = await pulseTick({ store, source: pulse, knownGames, log: () => {} });
+        if (r.normalized_written || r.raw_changed || pt.raw_written || r.errors.length) store.invalidateCache();
+        log(`watch ${season}: games_with_results=${r.games_fetched} plays_new=${r.normalized_written} changed=${r.raw_changed} errors=${r.errors.length} pulse_obs=${pt.observations} pulse_changed=${pt.raw_changed} live=${pt.live_games.length} seq=${pt.nedb_seq} ${Date.now() - t0}ms`);
+      } catch (e) {
+        log(`watch tick failed: ${(e as Error).message}`);
+      }
+      await new Promise((r) => setTimeout(r, intervalS * 1000));
+    }
+  })();
 }
 
 async function main() {
@@ -252,15 +298,28 @@ async function main() {
       return;
     }
     case "serve": {
-      const { store, stop } = await boot();
+      const { store, stop, mode } = await boot();
       const server = await startServer({
         store,
         host: str("host", process.env.HOST ?? "127.0.0.1")!,
         port: num("port", Number(process.env.PORT ?? 4040))!,
         log,
       });
+      // In-process watch loop — mandatory in embedded mode (nothing else can
+      // open the data dir), optional in http mode (a separate `chalk watch`
+      // process works there too).
+      const watchSeason = num("watch-season", process.env.CHALK_WATCH_SEASON ? Number(process.env.CHALK_WATCH_SEASON) : undefined);
+      const watchCtl = new AbortController();
+      if (watchSeason) {
+        const interval = num("watch-interval", Number(process.env.CHALK_WATCH_INTERVAL ?? 1800))!;
+        log(`watch: season ${watchSeason} every ${interval}s in-process (${mode} store)`);
+        startWatchLoop(store, watchSeason, interval, flags.deep === true, watchCtl.signal);
+      } else {
+        log(`watch: off (set CHALK_WATCH_SEASON or --watch-season to re-ingest + pulse on a cadence)`);
+      }
       const shutdown = () => {
         log("shutting down");
+        watchCtl.abort();
         server.close();
         stop();
         process.exit(0);

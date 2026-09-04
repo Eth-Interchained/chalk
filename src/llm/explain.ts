@@ -15,7 +15,7 @@
 import { extractBlocks } from "sentinel-blocks";
 import { COLL } from "../store/collections.ts";
 import { deterministicId } from "../store/hash.ts";
-import type { ChalkStore, NedbRow } from "../store/nedb.ts";
+import type { Store, NedbRow } from "../store/nedb.ts";
 import { stream, type LlmConfig, type StreamEvent } from "./client.ts";
 import { EXPLAINER_SYSTEM, EXPLAINER_USER_SUFFIX, PROMPT_VERSION } from "./prompts.ts";
 import type { QueryPlan } from "./planner.ts";
@@ -86,7 +86,7 @@ export function evidenceBytes(question: string, pkg: EvidencePackage, ctx: { tea
 
 export async function* explain(
   cfg: LlmConfig,
-  store: ChalkStore | null,
+  store: Store | null,
   question: string,
   plan: QueryPlan,
   pkg: EvidencePackage,

@@ -24,11 +24,12 @@ import { rateSubject } from "../rating/rank.ts";
 import { compareDefinitions, loadDefinition, rateThirdDown, type RateResult } from "../rating/league.ts";
 import type { RatingSnapshot } from "../rating/rating.ts";
 import { COLL } from "../store/collections.ts";
-import { ChalkStore, nqlStr, type NedbRow } from "../store/nedb.ts";
+import { nqlStr, type NedbRow } from "../store/nedb.ts";
+import type { Store } from "../store/nedb.ts";
 import type { RawDoc } from "../ingest/ingest.ts";
 
 export interface ExecContext {
-  store: ChalkStore;
+  store: Store;
   log: (l: string) => void;
 }
 
@@ -65,7 +66,7 @@ export function summarizeRating(r: RateResult) {
   };
 }
 
-export async function fetchCandidates(store: ChalkStore, f: SituationFilter) {
+export async function fetchCandidates(store: Store, f: SituationFilter) {
   return store.queryAt<Play>(compileNql(f));
 }
 
@@ -361,7 +362,7 @@ export async function execute(plan: QueryPlan, ctx: ExecContext): Promise<ExecRe
   }
 }
 
-async function findRawByHash(store: ChalkStore, coll: string, hash: string, gameId: string): Promise<NedbRow<RawDoc> | null> {
+async function findRawByHash(store: Store, coll: string, hash: string, gameId: string): Promise<NedbRow<RawDoc> | null> {
   const rows = await store.query<RawDoc>(`FROM ${coll} WHERE source_record_id_game = ${nqlStr(gameId)}`);
   return rows.find((r) => r._hash === hash) ?? null;
 }

@@ -11,7 +11,7 @@ export function openapiDocument(baseUrl: string) {
     openapi: "3.1.0",
     info: {
       title: "CHALK — Sports-Rater Football Intelligence API",
-      version: "0.5.0",
+      version: "0.6.0",
       description:
         "Deterministic football analytics over an NEDB provenance store. The database knows. Deterministic code calculates. The model interprets. Provenance proves. Every analysis, rating, play and model observation is addressable and traceable to raw source records.",
       license: { name: "BUSL-1.1" },
