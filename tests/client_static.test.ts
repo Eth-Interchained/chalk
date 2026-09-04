@@ -200,3 +200,13 @@ test("home refresh is quiet (v0.12.5): a stale-flagged serve refetches without w
   const body = fn.slice(0, fn.indexOf("\n}\n"));
   assert.ok(body.indexOf("if (!quiet) {") < body.indexOf('["#h-badges"'), "tile wipe is inside the non-quiet branch");
 });
+
+test("favorite is local-first (v0.12.6): the star never routes through the identity dialog; chain write only when a handle exists", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const fn = js.slice(js.indexOf("async function setFavorite("));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.ok(!body.includes("requireIdentity") && body.indexOf("localStorage.setItem(FAV_KEY") < body.indexOf("fanPost("), "local write happens before any chain write");
+  assert.ok(body.includes("const id = loadIdentity(); if (!id) return;"), "no handle → local only, no dialog");
+  assert.ok(body.includes("const un = state.favorite === state.team;"), "starring the favorite un-stars it");
+  assert.ok(js.includes("A local favorite chosen before the handle existed goes up once the handle is here."));
+});
