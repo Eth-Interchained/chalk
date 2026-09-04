@@ -33,7 +33,7 @@ import { explain, deterministicFallback, type EvidencePackage } from "../llm/exp
 import { llmConfigFromEnv, type LlmConfig } from "../llm/client.ts";
 import { planQuestion, type PlanContext, type QueryPlan } from "../llm/planner.ts";
 import type { Game, Play } from "../model/football.ts";
-import { BUILTIN_DEFINITIONS, CARD_SUBJECTS, OFFENSE_DEFAULT_V1, THIRD_DOWN_DEFAULT_V1, validateDefinition } from "../rating/definitions.ts";
+import { BUILTIN_DEFINITIONS, CARD_SUBJECTS, OFFENSE_DEFAULT_V1, THIRD_DOWN_DEFAULT_V1, validateDefinition, definitionSubjectMismatch, filterDefinitionsBySubject, RATING_SUBJECTS } from "../rating/definitions.ts";
 import { invalidateProfileCache, leagueProfilesFor, rankings, rateSubject } from "../rating/rank.ts";
 import { subjectTrend } from "../rating/trend.ts";
 import { invalidateLeagueCache } from "../rating/league.ts";
@@ -321,6 +321,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const season = Number(q.get("season") ?? defaultSeason);
       const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id));
       if (!def) throw new HttpError(404, `unknown rating definition ${q.get("definition")}`);
+      { const mismatch = definitionSubjectMismatch(def, "third_down"); if (mismatch) throw new HttpError(400, mismatch); }
       const r = await rateThirdDown(store, team, season, def, (q.get("side") as "offense" | "defense") ?? "offense", log);
       if (!r) throw new HttpError(404, `no third-down data for ${team} ${season}`);
       return json(res, 200, { summary: summarizeRating(r), snapshot: r.snapshot, definition: def, rank: r.rank, league: r.league, analysis_id: r.analysis.id, _hash: r.stored_hash, cached: r.cached });
@@ -329,6 +330,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const season = Number(q.get("season") ?? defaultSeason);
       const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id));
       if (!def) throw new HttpError(404, "unknown rating definition");
+      { const mismatch = definitionSubjectMismatch(def, "third_down"); if (mismatch) throw new HttpError(400, mismatch); }
       const l = await leagueThirdDown(store, season, (q.get("side") as "offense" | "defense") ?? "offense", log);
       const window = { season, description: `${season} as ingested` };
       const table = l.members.map((mem) => {
@@ -344,6 +346,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const a = await loadDefinition(store, need(q, "a"));
       const b = await loadDefinition(store, need(q, "b"));
       if (!a || !b) throw new HttpError(404, "unknown rating definition");
+      for (const d of [a, b]) { const mismatch = definitionSubjectMismatch(d, "third_down"); if (mismatch) throw new HttpError(400, `${mismatch} — compare is third-down only`); }
       const r = await compareDefinitions(store, team, season, a, b, (q.get("side") as "offense" | "defense") ?? "offense");
       if (!r) throw new HttpError(404, `no third-down data for ${team} ${season}`);
       return json(res, 200, { disagreement: r.disagreement, a: { summary: summarizeRating(r.a), snapshot: r.a.snapshot }, b: { summary: summarizeRating(r.b), snapshot: r.b.snapshot } });
@@ -365,6 +368,17 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       if (!def) throw new HttpError(404, "unknown rating definition");
       return json(res, 200, await rankings(store, season, def, log));
     }
+    // League table for any non-third-down subject (third-down has its own richer route above): the
+    // rankings() rows — score, sample, provisional, and rank movement vs a week earlier.
+    if ((mm = p.match(/^\/api\/v1\/ratings\/(offense|defense|red-zone|red_zone|explosiveness|ball-security|ball_security)\/league$/)) && m === "GET") {
+      const subject = mm[1].replace("-", "_") as (typeof RATING_SUBJECTS)[number];
+      const season = Number(q.get("season") ?? defaultSeason);
+      const def = (await loadDefinition(store, q.get("definition") ?? CARD_SUBJECTS.find((c) => c.subject === subject)!.definition.id));
+      if (!def) throw new HttpError(404, "unknown rating definition");
+      { const mismatch = definitionSubjectMismatch(def, subject); if (mismatch) throw new HttpError(400, mismatch); }
+      const r = await rankings(store, season, def, log);
+      return json(res, 200, { subject, season, definition: { id: def.id, name: def.name, version: def.version }, population: r.population, through_week: r.through_week, seq: r.computed_at.seq, head: r.computed_at.head, table: r.rows.map((row) => ({ rank: row.rank, team: row.team, score: row.score, sample: row.sample, provisional: row.provisional, movement: row.movement })) });
+    }
     if ((mm = p.match(/^\/api\/v1\/ratings\/(offense|defense|red-zone|red_zone|explosiveness|ball-security|ball_security)$/)) && m === "GET") {
       const subject = mm[1].replace("-", "_");
       const team = need(q, "team").toUpperCase();
@@ -381,6 +395,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const season = Number(q.get("season") ?? defaultSeason);
       const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id));
       if (!def) throw new HttpError(404, "unknown rating definition");
+      { const mismatch = definitionSubjectMismatch(def, "third_down"); if (mismatch) throw new HttpError(400, mismatch); }
       const l = await leagueThirdDown(store, season, (q.get("side") as "offense" | "defense") ?? "offense", log);
       const t = thirdDownTrend(l.plays, team, season, def, { seq: l.seq, head: l.head }, (q.get("side") as "offense" | "defense") ?? "offense");
       return json(res, 200, t);
@@ -406,6 +421,8 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const team = mm[1].toUpperCase();
       const season = Number(q.get("season") ?? defaultSeason);
       const def = (await loadDefinition(store, q.get("definition") ?? THIRD_DOWN_DEFAULT_V1.id)) ?? THIRD_DOWN_DEFAULT_V1;
+      const mismatch = definitionSubjectMismatch(def, "third_down");
+      if (mismatch) throw new HttpError(400, `${mismatch} — the Home third-down rating only takes third_down definitions; use /api/v1/ratings/${def.subject.replace("_", "-")}?definition=${encodeURIComponent(def.id)}`);
       return json(res, 200, await serveHome(team, season, def, q.get("fresh") === "1"));
     }
     // ------------------------------------------------- Sports-Rater fan layer
@@ -471,7 +488,11 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       res.end(svg);
       return;
     }
-    if (p === "/api/v1/rating-definitions" && m === "GET") return json(res, 200, { definitions: await listDefinitions(store), rateable_metrics: (await import("../rating/definitions.ts")).RATEABLE_METRICS });
+    if (p === "/api/v1/rating-definitions" && m === "GET") {
+      const subject = q.get("subject");
+      if (subject && !(RATING_SUBJECTS as readonly string[]).includes(subject)) throw new HttpError(400, `subject: one of ${RATING_SUBJECTS.join("|")}`);
+      return json(res, 200, { subject: subject ?? null, definitions: filterDefinitionsBySubject(await listDefinitions(store), subject), rateable_metrics: (await import("../rating/definitions.ts")).RATEABLE_METRICS });
+    }
     if (p === "/api/v1/rating-definitions" && m === "POST") {
       const body = await readJson(req);
       const v = validateDefinition(body);

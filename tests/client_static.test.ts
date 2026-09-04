@@ -121,3 +121,18 @@ test("coach deck renders progressively, names every failure, and cannot overflow
   assert.match(css, /\.coach-panels \.cpanel \{[^}]*min-width: 0/, "grid item needs min-width:0 or the table's intrinsic width overflows the column");
   assert.match(css, /\.coach-panels \.cpanel \.tbl \{[^}]*max-width: 100%/);
 });
+
+test("headline rating is switchable by subject (v0.10.0): picker markup, URL param, League and Rate differently follow the subject", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../web/index.html", import.meta.url), "utf8");
+  assert.ok(html.includes('id="headline-pick"') && html.includes('id="rc-label"') && html.includes('id="rc-why"'), "hero carries the picker, a dynamic label and a dynamic Why? button");
+  assert.ok(js.includes("function setHeadline(") && js.includes("function renderHeadline(") && js.includes("function renderHeadlinePicker("));
+  assert.match(js, /searchParams\.get\("headline"\)/, "headline is read from the URL");
+  assert.match(js, /u\.searchParams\.set\("headline", state\.headline\)/, "headline is written to the URL");
+  assert.ok(js.includes("/api/v1/rating-definitions?subject=${sj}"), "Rate differently only offers the active subject's formulas");
+  assert.ok(js.includes("/api/v1/ratings/${subjectPath(sj)}/league?season="), "League follows the subject");
+  assert.ok(js.includes("subject: sj, components, author"), "custom formulas are saved under the active subject");
+  const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
+  assert.ok(server.includes('definitionSubjectMismatch(def, "third_down")'), "Home refuses a non-third-down definition");
+  assert.match(server, /ratings\\\/\(offense\|defense\|red-zone\|red_zone\|explosiveness\|ball-security\|ball_security\)\\\/league\$/, "subject league route exists");
+});

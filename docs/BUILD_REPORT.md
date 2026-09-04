@@ -5,6 +5,16 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.10.0 · the headline rating is switchable
+
+- **Mark:** "are we able to switch between these modes? … is the 3rd down default but these other categories are silently being left on the server hidden behind the server? because these ratings are probably awesome for the UI" → "1,2,3".
+- **State before:** the six subject ratings were on the page (tiles + coach deck) but the hero ring was hard-wired to third down. **Footgun (mine):** Rate differently listed every saved definition regardless of `subject`, and `/teams/X/home?definition=` accepted any of them — picking "Sports-Rater Offense" scored an offense formula over third-down plays only. A plausible-looking wrong number with provenance proving it was computed exactly wrong.
+- **1 · Fix:** `definitionSubjectMismatch(def, subject)` — Home, `/ratings/third-down`, `/ratings/third-down/league` and `/ratings/compare` return 400 for a non-third-down definition (the message points at the right subject route); `/rating-definitions?subject=` filters; Rate differently only offers the active subject's formulas and saves custom ones under that subject with only that subject's metrics.
+- **2 · Feature:** headline picker on the hero (Third Down · Offense · Defense · Red Zone · Explosiveness · Ball Security), `?headline=offense` in the URL, tiles switch it on click and mark the active one. Switching is a re-render, not a rebuild: every subject's default rating is already in the Home payload (`ratings[]`), so the ring, rank and definition line paint instantly; the components table is one cheap `/ratings/{subject}` fetch. Third down keeps the full Home rating (trend follows the formula).
+- **3 · Follow the subject:** label, Why? question (`SUBJECT_Q`), League (new `/api/v1/ratings/{subject}/league` from `rankings()` — score, sample, provisional, rank movement vs a week earlier; third down keeps its richer table), Rate differently (re-rates in place for non-third-down subjects; compare stays third-down only, as the engine's compare is).
+- Not in this PR: the Home snapshot is still keyed by third-down definition only — a custom non-third-down formula is not persisted as the headline across reloads (URL carries the subject, not the formula). Trend chart stays third-down when another subject is the headline; the per-subject `/trend` route exists if we want it to follow.
+- Tests: subject mismatch + filter helpers; static guard for picker/URL/League/Rate-differently/server refusal. 92/92 both stores. Live on the local store: see PR.
+
 ## 2026-09-04 — v0.9.3 · coach deck: clipped tables, smeared headers, all-or-nothing load
 
 - **Mark:** coach mode "never fully loads properly" once (recovered after a reboot), and when it does "loads eventually but ugly" — screenshot: component tables cut off on both sides (C of COMPONENT, E of EPA, PTS column), panel titles and sub-lines smeared into two columns.
