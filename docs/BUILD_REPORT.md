@@ -5,6 +5,11 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.12.2 · the snapshot stamp carries the code version
+
+- **Leftover** (named in v0.9.1 and v0.10.0). The Home snapshot stamp was data-only (`w<seq>:p<seq>`), so a deploy that changed rating math kept serving snapshots computed by the old code until `?fresh=1`. Now the stamp is `w<seq>:p<seq>:v<package version>` — every deploy that bumps the version rebuilds each team's Home exactly once (background, served stale-flagged meanwhile), and do-nothing watch ticks still hold it. No new rebuild loop: the version changes only when the code does.
+- Tests: static guard. 102/102 both stores.
+
 ## 2026-09-04 — v0.12.1 · the fan chain verifies across replaced writes
 
 - **Leftover from v0.11.0** (picked up per Mark's rhythm: directive first, then the queue). Since v0.4.0 the chain walker indexed only current versions, so any replaced write (re-rate, re-pick, changed favorite, re-hype) left `prev` citing a superseded hash → `verified: false`, and the v0.4.0 test encoded that as expected behaviour.

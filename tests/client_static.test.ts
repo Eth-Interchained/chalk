@@ -173,3 +173,8 @@ test("headline sharecard (v0.12.0): share button, canvas draw, copy/download/cap
   assert.ok(js.includes('location.pathname.match(/^\\/s\\/([A-Za-z]{2,3})$/)'), "SPA reads the team from a /s/TEAM landing");
   assert.ok(server.includes("injectOg(html, shareCopy(home") && server.includes('/api\\/v1\\/share\\/([A-Za-z]{2,3})$'), "server: landing with OG tags + share copy route");
 });
+
+test("home snapshot stamp carries the code version (v0.12.2): a deploy invalidates snapshots once", () => {
+  const server = readFileSync(new URL("../src/server/app.ts", import.meta.url), "utf8");
+  assert.ok(server.includes("const next = `${dataStampFrom(ingestEvents, pulseEvents)}:v${CHALK_VERSION}`;"), "stamp = data stamp + code version");
+});
