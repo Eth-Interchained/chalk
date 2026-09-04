@@ -225,3 +225,9 @@ test("sharecard rating strip fits all six tiles (v0.12.9): width derived from th
   assert.ok(x0 + n * tileW + (n - 1) * gap <= SHARE_W - 24, "six tiles fit inside the right margin");
   assert.ok(tileW >= 120, `tiles stay legible (${tileW}px)`);
 });
+
+test("headline state reset (v0.12.10): switching back to third down resets the applied formula; League/Rate differently never send another subject's definition", () => {
+  const js = readFileSync(new URL("../web/app.js", import.meta.url), "utf8");
+  assert.ok(js.includes('state.ratingSubject = "third_down";\n    renderRating(h); return;'), "third-down path resets state.rating from the Home payload");
+  assert.equal((js.match(/state\.ratingSubject === sj \? state\.rating\?\.snapshot\?\.definition_id : undefined/g) || []).length, 3, "League, saved-formula click and custom-formula save all guard by subject");
+});
