@@ -227,6 +227,7 @@ test("audit: names games below the play floor and games without context; empty s
   } else {
     assert.equal(a.ok, false);
     assert.match(a.summary, /short of the 100-play floor: 2025_18_CAR_TB/);
+    assert.match(a.summary, /--game 2025_18_CAR_TB --deep/);
   }
   const empty = await auditSeason(store, 1999);
   assert.equal(empty.ok, true);
