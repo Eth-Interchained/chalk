@@ -4,6 +4,19 @@ Living document. Newest entry first. Sections: SHIPPED · IN PROGRESS · DISCOVE
 
 ---
 
+## 2026-09-04 — v0.7.0 · The Record: answers served by provenance, browsable per team
+
+### SHIPPED
+- **Mark:** "are we caching the LLM responses and serving those too? … a mix of both." Before: every answer was stored as a `football_observations` row and never read back; every click was a fresh GLM stream.
+- `src/llm/record.ts` — `evidenceKey(plan, pkg)`: hash of intent + filters + calculation hashes + evidence count + summary + prompt version. Same key ⇒ the explainer's inputs are byte-identical ⇒ the stored answer is correct by construction. Any data change alters the calculation hashes and the key. `findObservation` returns the latest complete (non-error, non-truncated) answer for a key. `listRecord` lists a team's answers newest-first with fan reaction tallies joined.
+- Observations now carry `team`, `season`, `evidence_key`, `statements`. Ask flow: after the evidence event, a matching observation is served instantly (`from_record: true`, `recorded_at`); `live: true` in the body forces a fresh stream and stores a NEW observation beside the old — the record is append-only. Boot creates eq indexes on `observations.evidence_key` and `.team`.
+- `GET /api/v1/record?team=TB&season=2025&limit=20`. Client: "The Record" strip on Home (horizontal cards: question, first statement, model, age, 👍/👎); tap → the stored answer opens as a card with agree/disagree (target the observation), Provenance, and **Re-ask live**. Live answers get a `from the record · 2h ago` badge when served from storage, plus Re-ask live.
+
+### VERIFIED ON THE REAL SYSTEM
+- Tests: key determinism/invalidation matrix; find latest-complete semantics (failed + truncated skipped); per-team listing order + reaction join; 66/66 both stores. Live: `/api/v1/record` on the local serve (no LLM key locally, so serve-from-record itself needs the VPS: first ask streams, second identical ask shows `from the record`).
+
+---
+
 ## 2026-09-04 — v0.6.7 · game_rank intent: "which game was their best game" now has a tool
 
 ### SHIPPED

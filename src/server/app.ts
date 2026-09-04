@@ -10,6 +10,7 @@ import { auditSeason } from "../ingest/audit.ts";
 import { homeSnapshotId, homeServeDecision, loadHomeSnapshot, persistHomeSnapshot, type HomePayload } from "./home.ts";
 import type { RatingDefinition } from "../rating/definitions.ts";
 import { logoConfig } from "./logos.ts";
+import { evidenceKey, findObservation, listRecord } from "../llm/record.ts";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -465,6 +466,12 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
     }
     if (p === "/api/v1/ask" && m === "POST") return ask(req, res);
 
+    if (p === "/api/v1/record" && m === "GET") {
+      const team = q.get("team")?.toUpperCase() || undefined;
+      const season = q.get("season") ? Number(q.get("season")) : undefined;
+      const r = await listRecord(store, { team, season, limit: Math.min(100, Number(q.get("limit") ?? 30)) });
+      return json(res, 200, { count: r.items.length, seq: r.seq, head: r.head, items: r.items });
+    }
     if ((mm = p.match(/^\/api\/v1\/observations\/([^/]+)$/)) && m === "GET") {
       const row = await store.get(COLL.observations, decodeURIComponent(mm[1]));
       if (!row) throw new HttpError(404, "observation not found");
@@ -517,7 +524,7 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
   }
 
   async function ask(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = (await readJson(req)) as { question?: string; team?: string; season?: number; game_id?: string; play_id?: string; explain?: boolean };
+    const body = (await readJson(req)) as { question?: string; team?: string; season?: number; game_id?: string; play_id?: string; explain?: boolean; live?: boolean };
     if (!body.question || typeof body.question !== "string") throw new HttpError(400, "question required");
     const question = body.question.trim().slice(0, 500);
     const started = Date.now();
@@ -551,7 +558,20 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
       const wantExplain = body.explain !== false && plan.intent !== "unsupported";
       if (wantExplain && llm && llm.key) {
         const team = (plan.filter?.team ?? (plan.filters.team as string) ?? defaultTeam) as string;
-        const season = (plan.filter?.season ?? defaultSeason) as number;
+        const season = (plan.filter?.season ?? (plan.filters.season as number) ?? defaultSeason) as number;
+        // The Record: same inputs (intent, filters, calculation hashes, summary,
+        // prompt version) => serve the stored answer instead of streaming a new
+        // one. `live: true` forces a fresh stream; the old answer is kept.
+        const key = evidenceKey(plan, pkg);
+        qe.evidence_key = key;
+        const prior = body.live === true ? null : await findObservation(store, key).catch((e) => { log(`record lookup failed (streaming live instead): ${(e as Error).message}`); return null; });
+        if (prior) {
+          qe.observation_id = prior._id; qe.model = prior.data.model; qe.from_record = true;
+          send("token", { text: prior.data.answer });
+          send("observation", { id: prior._id, _hash: prior._hash, model: prior.data.model, latency_ms: 0, answer_truncated: false, from_record: true, recorded_at: prior.data.created_at, recorded_latency_ms: prior.data.latency_ms });
+          send("done", { latency_ms: Date.now() - started });
+          return;
+        }
         for await (const ev of explain(llm, store, question, plan, pkg, { team, season }, log)) {
           if (ev.type === "token") send("token", { text: ev.text });
           else if (ev.type === "observation") { qe.observation_id = ev.observation.id; qe.model = ev.observation.model; qe.answer_truncated = ev.observation.answer_truncated; qe.llm_ms = ev.observation.latency_ms; send("observation", { id: ev.observation.id, _hash: ev.hash, model: ev.observation.model, prompt_version: ev.observation.prompt_version, finish_reason: ev.observation.finish_reason, answer_truncated: ev.observation.answer_truncated, latency_ms: ev.observation.latency_ms, error: ev.observation.error }); }
@@ -618,6 +638,10 @@ export async function startServer(opts: ServerOptions): Promise<Server> {
 
   await new Promise<void>((resolve) => server.listen(opts.port, opts.host, resolve));
   await meta().catch((e) => log(`meta warmup failed: ${(e as Error).message}`));
+  // The Record is looked up by evidence_key on every ask and listed by team; eq indexes keep both off the scan path. Idempotent.
+  for (const field of ["evidence_key", "team"]) {
+    await store.client.createIndex(COLL.observations, field, "eq").catch((e) => log(`index ${COLL.observations}.${field} failed (lookups fall back to scans): ${(e as Error).message}`));
+  }
 
   // Data-change watcher: when another process (chalk ingest / chalk watch)
   // finishes a run, a new football_ingest_events row appears. Drop every
