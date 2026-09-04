@@ -266,3 +266,14 @@ form.rd .go { justify-self: start; }
 .opp { display: flex; align-items: center; gap: 10px; }
 .opp-logo { width: 40px; height: 40px; object-fit: contain; flex: 0 0 auto; }
 .site-foot { margin: 28px 4px 12px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.5; color: var(--fg-3); display: grid; gap: 6px; }
+
+/* ---------------- the record ---------------- */
+.record { margin: 4px 0 10px; }
+.record .tile-h { padding: 0 4px 8px; }
+.record-strip { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 4px 10px; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.record-strip:empty::after { content: ""; display: block; height: 4px; }
+.rec { flex: 0 0 min(78vw, 300px); scroll-snap-align: start; text-align: left; background: var(--bg-2); border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: grid; gap: 6px; transition: border-color .15s, transform .1s; }
+.rec:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); transform: translateY(-1px); }
+.rec-q { font-family: var(--display); font-weight: 700; font-size: 16px; line-height: 1.15; letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.rec-s { font-size: 12.5px; color: var(--fg-2); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.rec-m { display: flex; gap: 10px; font-family: var(--mono); font-size: 10.5px; color: var(--fg-3); }

@@ -78,6 +78,42 @@ function syncUrl() { const u = new URL(location.href); u.searchParams.set("team"
 function renderSuggest() { const s = $("#suggest"); s.innerHTML = ""; for (const q of state.meta.suggested_questions) s.append(el(`<button class="chip" data-ask="${esc(q)}">${esc(q.replaceAll("Tampa", teamName(state.team)))}</button>`)); }
 
 // ------------------------------------------------------------------ home
+function ago(iso) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)}m ago` : s < 86400 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`;
+}
+// The Record: what CHALK has already said about this team, newest first. Tap a
+// card to open the stored answer (no model call); "Re-ask live" streams fresh.
+async function loadRecord() {
+  const strip = $("#record-strip"); if (!strip) return;
+  try {
+    const r = await api(`/api/v1/record?team=${state.team}&season=${state.season}&limit=20`);
+    $("#record-sub").textContent = r.count ? `${r.count} answer${r.count === 1 ? "" : "s"} on record` : "nothing on record yet — ask something";
+    strip.innerHTML = "";
+    for (const it of r.items) {
+      const c = el(`<button class="rec"><div class="rec-q">${esc(it.question)}</div><div class="rec-s">${esc(it.statements[0] ?? (it.answer ?? "").slice(0, 140))}</div><div class="rec-m"><span>${esc(it.model)}</span><span>${esc(ago(it.created_at))}</span><span>👍 ${it.reactions.agree + it.reactions.like} · 👎 ${it.reactions.disagree}</span></div></button>`);
+      c.onclick = () => openRecorded(it);
+      strip.append(c);
+    }
+  } catch (e) { strip.innerHTML = `<div class="err">record unavailable: ${esc(e.message)}</div>`; }
+}
+function openRecorded(it) {
+  const card = $("#tpl-answer").content.firstElementChild.cloneNode(true);
+  card.classList.toggle("coach-on", state.coach);
+  $(".q", card).textContent = it.question;
+  const badges = $(".badges", card), statements = $(".statements", card), prose = $(".prose", card), drawer = $(".drawer", card);
+  badges.append(el(`<span class="badge lime">${esc(it.intent)}</span>`), el(`<span class="badge lime" title="stored observation ${esc(it.id)}">from the record · ${esc(ago(it.created_at))}</span>`), el(`<span class="badge">${esc(it.model)}</span>`));
+  for (const st of it.statements) statements.append(el(`<div class="statement">${esc(st)}</div>`));
+  prose.textContent = it.answer ?? "";
+  $(".coach", card).innerHTML = `<div class="muted">Coach view needs the live evidence package — use Re-ask live.</div>`;
+  $(".act-evidence", card).remove(); $(".act-plan", card).remove();
+  const re = el(`<button class="chip">Re-ask live</button>`); re.onclick = () => ask(it.question, { live: true }); $(".card-foot", card).prepend(re);
+  $(".act-coach", card).onclick = () => card.classList.toggle("coach-on");
+  card.querySelectorAll(".act-react").forEach((b) => { b.onclick = async () => { try { const r = await fanPost("/api/v1/fans/reactions", { target_coll: "football_observations", target_id: it.id, reaction: b.dataset.kind }); if (r) { b.classList.add("on"); b.textContent = `${b.dataset.kind === "agree" ? "👍" : "👎"} ${r.replaced ? "changed" : "saved"} · #${r.chain_index}`; loadRecord(); } } catch (e) { b.textContent = e.message; } }; });
+  $(".act-provenance", card).onclick = async () => { try { const pv = await api(`/api/v1/provenance/football_observations/${encodeURIComponent(it.id)}`); drawer.innerHTML = `<div class="h">Provenance</div><pre class="code">${esc(JSON.stringify(pv, null, 2)).slice(0, 6000)}</pre>`; } catch (e) { drawer.innerHTML = `<div class="err">${esc(e.message)}</div>`; } };
+  $("#feed").prepend(card);
+  card.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 function renderSiteFoot() {
   const f = $("#site-foot"); if (!f) return;
   const lic = state.meta?.licensing;
@@ -116,6 +152,7 @@ async function loadHome(defId) {
     renderScout(h.scout, h.next_game);
     renderTrendChips(h.ratings);
     loadGames();
+    loadRecord();
   } catch (e) { clearTimeout(slow); $("#home").classList.remove("loading"); $("#ring").classList.remove("loading");
     $("#rc-score").textContent = "–";
     $("#rc-line1").innerHTML = `<span class="err">${esc(e.message)}</span>`;
@@ -312,7 +349,7 @@ function rateTile(r) {
 }
 
 // ------------------------------------------------------------------- ask
-async function ask(question) {
+async function ask(question, opts = {}) {
   const card = $("#tpl-answer").content.firstElementChild.cloneNode(true);
   card.classList.toggle("coach-on", state.coach);
   $(".q", card).textContent = question;
@@ -325,7 +362,7 @@ async function ask(question) {
   // Skeleton lines stand in for the deterministic statements until the evidence event lands.
   statements.innerHTML = `<div class="skeleton" style="width:78%"></div><div class="skeleton" style="width:62%"></div><div class="skeleton" style="width:70%"></div>`;
   const url = new URL(location.href);
-  const body = { question, team: state.team, season: state.season, game_id: url.searchParams.get("game_id") || undefined };
+  const body = { question, team: state.team, season: state.season, game_id: url.searchParams.get("game_id") || undefined, live: opts.live === true || undefined };
   try {
     const res = await fetch("/api/v1/ask", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok || !res.body) throw new Error(`${res.status} ${await res.text()}`);
@@ -350,7 +387,9 @@ async function ask(question) {
       try { coach.append(renderCoach(d)); } catch (e) { console.error("renderCoach failed", d.kind, e); coach.append(el(`<div class="err">coach view failed to render this ${esc(d.kind)} package: ${esc(e.message)} — the statements above are unaffected.</div>`)); }
     }
     else if (ev === "token") prose.textContent += d.text;
-    else if (ev === "observation") { observation = d; prose.classList.remove("streaming"); if (d.id) badges.append(el(`<span class="badge" title="observation ${esc(d.id)}">${esc(d.model)} · ${(d.latency_ms / 1000).toFixed(1)}s</span>`)); if (d.answer_truncated) badges.append(el(`<span class="badge red">truncated</span>`)); if (d.skipped) badges.append(el(`<span class="badge amber">${esc(d.skipped)}</span>`)); }
+    else if (ev === "observation") { observation = d; prose.classList.remove("streaming");
+      if (d.from_record) { badges.append(el(`<span class="badge lime" title="Same inputs as when this was answered on ${esc(d.recorded_at)} — served from the record, no model call">from the record · ${esc(ago(d.recorded_at))}</span>`)); const re = el(`<button class="chip">Re-ask live</button>`); re.onclick = () => ask(question, { live: true }); $(".card-foot", card).prepend(re); }
+      else if (d.id) { badges.append(el(`<span class="badge" title="observation ${esc(d.id)}">${esc(d.model)} · ${(d.latency_ms / 1000).toFixed(1)}s</span>`)); loadRecord(); } if (d.answer_truncated) badges.append(el(`<span class="badge red">truncated</span>`)); if (d.skipped) badges.append(el(`<span class="badge amber">${esc(d.skipped)}</span>`)); }
     else if (ev === "error") { prose.classList.remove("streaming"); statements.querySelectorAll(".skeleton").forEach((x) => x.remove()); statements.append(el(`<div class="err">${esc(d.error)}${d.errors ? ` — ${esc(d.errors.join("; "))}` : ""}</div>`)); }
     else if (ev === "done") prose.classList.remove("streaming");
   }

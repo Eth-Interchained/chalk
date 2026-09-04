@@ -84,6 +84,7 @@ Every tick lands as immutable observations in `football_raw_pulse` with derived 
 chalk ingest --season 2025 [--team TB] [--game 2025_18_CAR_TB] [--deep | --context-only]   # --deep = plays + context in one pass
 chalk serve / chalk watch: the watch loop is deep by default (CHALK_WATCH_DEEP=0 to skip context)
 chalk audit --season 2025 [--full]   # per-game play/context reconciliation; also GET /api/v1/ingest/audit
+GET /api/v1/record?team=TB&season=2025   # The Record: every stored model answer for a team; asks with identical inputs are served from it
 chalk analyze --team TB --season 2025 [--game ID] [--side defense]
 chalk rate --team TB --season 2025 [--definition third_down_default@1.0.0]
 chalk scan --team TB --season 2025

@@ -19,6 +19,7 @@ import type { Store, NedbRow } from "../store/nedb.ts";
 import { stream, type LlmConfig, type StreamEvent } from "./client.ts";
 import { EXPLAINER_SYSTEM, EXPLAINER_USER_SUFFIX, PROMPT_VERSION } from "./prompts.ts";
 import type { QueryPlan } from "./planner.ts";
+import { evidenceKey } from "./record.ts";
 
 export interface EvidencePackage {
   /** Human-readable kind for the model: "third_down", "tendency", ... */
@@ -41,6 +42,13 @@ export interface ObservationRecord {
   id: string;
   question: string;
   intent: string;
+  /** Team/season the answer is about (from the plan context) — the Record is browsed per team. */
+  team?: string;
+  season?: number;
+  /** Provenance key of everything the model saw (see record.ts). Same key => same inputs => reusable. */
+  evidence_key?: string;
+  /** The deterministic statements shown with the answer, so a recorded answer renders without re-execution. */
+  statements?: string[];
   query_plan: { id: string; intent: string; filters: unknown; source: string };
   model: string;
   model_revision: string | null;
@@ -159,6 +167,10 @@ export async function* explain(
     id: deterministicId("obs", { question, plan: plan.id, calc: pkg.calculation_ids, started }),
     question,
     intent: plan.intent,
+    team: ctx.team,
+    season: ctx.season,
+    evidence_key: evidenceKey(plan, pkg),
+    statements: pkg.deterministic_statements ?? [],
     query_plan: { id: plan.id, intent: plan.intent, filters: plan.filters, source: plan.source },
     model: cfg.model,
     model_revision: null,
